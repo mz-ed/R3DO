@@ -54,9 +54,9 @@ struct Camera {
 void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
                   int image_width, int image_height, int samples,
                   const Vec3& light_dir) {
-    double viewport_height = 3.0;
+    double viewport_height = 2.5;
     double viewport_width = viewport_height * image_width / image_height;
-    double focal_length = 1.5;
+    double focal_length = 2.0;
 
     Vec3 fwd = cam.forward();
     Vec3 rgt = cam.right();
@@ -64,7 +64,7 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
 
     Vec3 horizontal = viewport_width * rgt;
     Vec3 vertical = viewport_height * up;
-    Vec3 lower_left = cam.pos - horizontal/2 - vertical/2 - fwd * focal_length;
+    Vec3 lower_left = cam.pos - horizontal/2 - vertical/2 + fwd * focal_length;
 
     for (int j = image_height - 1; j >= 0; --j) {
         for (int i = 0; i < image_width; ++i) {
@@ -91,19 +91,27 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
 }
 
 int main() {
-    int nx = 6, ny = 6, nz = 6;
-    double cell_size = 0.4;
+    int nx = 10, ny = 10, nz = 10;
+    double cell_size = 0.8;
     Vec3 grid_center(0, 0, 0);
 
     Grid grid(nx, ny, nz, cell_size, grid_center);
 
-    grid.set(2, 2, 2, new Sphere(grid.cell_center(2, 2, 2), cell_size * 0.35, Vec3(1, 0.2, 0.2)));
-    grid.set(0, 0, 0, new Sphere(grid.cell_center(0, 0, 0), cell_size * 0.3, Vec3(0.2, 0.4, 1)));
-    grid.set(5, 5, 5, new Sphere(grid.cell_center(5, 5, 5), cell_size * 0.3, Vec3(0.2, 1, 0.3)));
-    grid.set(0, 5, 0, new Sphere(grid.cell_center(0, 5, 0), cell_size * 0.3, Vec3(1, 1, 0.2)));
-    grid.set(5, 0, 5, new Sphere(grid.cell_center(5, 0, 5), cell_size * 0.3, Vec3(1, 0.5, 0)));
-    grid.set(3, 1, 4, new Sphere(grid.cell_center(3, 1, 4), cell_size * 0.25, Vec3(0.8, 0.3, 0.8)));
-    grid.set(1, 4, 2, new Sphere(grid.cell_center(1, 4, 2), cell_size * 0.25, Vec3(0.2, 0.9, 0.9)));
+    grid.set(0, 0, 0, new Sphere(grid.cell_center(0, 0, 0), cell_size * 0.45, Vec3(1, 0.2, 0.2)));
+    grid.set(9, 9, 9, new Sphere(grid.cell_center(9, 9, 9), cell_size * 0.45, Vec3(0.2, 1, 0.3)));
+    grid.set(0, 9, 0, new Sphere(grid.cell_center(0, 9, 0), cell_size * 0.45, Vec3(1, 1, 0.2)));
+    grid.set(9, 0, 9, new Sphere(grid.cell_center(9, 0, 9), cell_size * 0.45, Vec3(1, 0.5, 0)));
+    grid.set(4, 4, 4, new Sphere(grid.cell_center(4, 4, 4), cell_size * 0.45, Vec3(0.2, 0.4, 1)));
+    grid.set(5, 5, 5, new Sphere(grid.cell_center(5, 5, 5), cell_size * 0.45, Vec3(0.9, 0.2, 0.9)));
+    grid.set(2, 7, 3, new Sphere(grid.cell_center(2, 7, 3), cell_size * 0.45, Vec3(0.2, 0.9, 0.9)));
+    grid.set(7, 2, 6, new Sphere(grid.cell_center(7, 2, 6), cell_size * 0.45, Vec3(0.8, 0.6, 0.2)));
+    grid.set(1, 1, 8, new Sphere(grid.cell_center(1, 1, 8), cell_size * 0.45, Vec3(0.5, 0.3, 1)));
+    grid.set(8, 8, 1, new Sphere(grid.cell_center(8, 8, 1), cell_size * 0.45, Vec3(1, 0.6, 0.6)));
+
+    Vec3 box_half = Vec3(cell_size * 0.38, cell_size * 0.38, cell_size * 0.38);
+    grid.set(2, 2, 2, new Box(grid.cell_center(2, 2, 2) - box_half, grid.cell_center(2, 2, 2) + box_half, Vec3(0.1, 0.8, 0.3)));
+    grid.set(7, 7, 7, new Box(grid.cell_center(7, 7, 7) - box_half, grid.cell_center(7, 7, 7) + box_half, Vec3(0.8, 0.2, 0.3)));
+    grid.set(3, 8, 2, new Box(grid.cell_center(3, 8, 2) - box_half, grid.cell_center(3, 8, 2) + box_half, Vec3(0.3, 0.5, 1)));
 
     int image_width = 800;
     int image_height = 600;
@@ -113,7 +121,7 @@ int main() {
     Vec3 light_dir(1, 2, 1);
 
     DisplayWin display(image_width, image_height, "R3DO - 3D Space");
-    Camera cam(Vec3(2.5, 2.0, 4.5), 0, -0.15);
+    Camera cam(Vec3(3.0, 1.5, 4.0), 0, -0.15);
 
     std::cout << "Initial render..." << std::endl;
     render_scene(grid, cam, display, lq_width, lq_height, lq_samples, light_dir);
@@ -129,7 +137,7 @@ int main() {
         display.clear_key();
 
         if (key) {
-            double move_speed = 0.2;
+            double move_speed = 0.5;
             double rot_speed = 0.06;
             bool moved = false;
 
