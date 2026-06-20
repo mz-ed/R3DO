@@ -39,4 +39,4 @@ g++ -std=c++11 -O3 main.cpp display.cpp -lX11 -o renderer
 | `hittable.hpp` | Abstract Hittable interface + Ray + HitRecord |
 | `sphere.hpp` | Sphere primitive |
 | `box.hpp` | Axis-aligned box primitive (slab method) |
-| `grid.hpp` | 10×10×10 grid with DDA ray traversal |
+| `grid.hpp` | 10×10×10 grid with DDA ray traversal
