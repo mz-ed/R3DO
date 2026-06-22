@@ -4,7 +4,8 @@
 #include <cstdio>
 
 DisplayWin::DisplayWin(int width, int height, const char* title)
-    : width_(width), height_(height), closed_(false), data_(nullptr), last_keysym_(0) {
+    : width_(width), height_(height), closed_(false), data_(nullptr),
+      last_keysym_(0), mouse_x_(0), mouse_y_(0), mouse_clicked_(false) {
     d = XOpenDisplay(nullptr);
     if (!d) {
         fprintf(stderr, "Cannot open X display\n");
@@ -15,7 +16,7 @@ DisplayWin::DisplayWin(int width, int height, const char* title)
     w = XCreateSimpleWindow(d, root, 0, 0, width, height, 1,
         BlackPixel(d, screen), 0x222222);
     XStoreName(d, w, title);
-    XSelectInput(d, w, ExposureMask | KeyPressMask | StructureNotifyMask);
+    XSelectInput(d, w, ExposureMask | KeyPressMask | ButtonPressMask | StructureNotifyMask);
     wm_delete = XInternAtom(d, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(d, w, &wm_delete, 1);
     XMapWindow(d, w);
@@ -25,6 +26,13 @@ DisplayWin::DisplayWin(int width, int height, const char* title)
 
     gc = XCreateGC(d, w, 0, nullptr);
 
+    font_ = XLoadQueryFont(d, "fixed");
+    if (!font_) font_ = XLoadQueryFont(d, "9x15");
+    if (font_) XSetFont(d, gc, font_->fid);
+
+    white_pixel_ = WhitePixel(d, screen);
+    black_pixel_ = BlackPixel(d, screen);
+
     Visual* vis = DefaultVisual(d, screen);
     int depth = DefaultDepth(d, screen);
     img = XCreateImage(d, vis, depth, ZPixmap, 0, nullptr, width, height, 32, 0);
@@ -33,6 +41,7 @@ DisplayWin::DisplayWin(int width, int height, const char* title)
 }
 
 DisplayWin::~DisplayWin() {
+    if (font_) XFreeFont(d, font_);
     if (img) {
         img->data = nullptr;
         XDestroyImage(img);
@@ -64,9 +73,24 @@ void DisplayWin::process_events() {
             XLookupString(&e.xkey, buf, sizeof(buf), &keysym, nullptr);
             last_keysym_ = (int)keysym;
         }
+        if (e.type == ButtonPress) {
+            mouse_x_ = e.xbutton.x;
+            mouse_y_ = e.xbutton.y;
+            mouse_clicked_ = true;
+        }
         if (e.type == DestroyNotify) { closed_ = true; }
         if (e.type == ClientMessage) {
             if ((Atom)e.xclient.data.l[0] == wm_delete) { closed_ = true; }
         }
     }
+}
+
+void DisplayWin::draw_text(int x, int y, const char* text, unsigned long color) {
+    XSetForeground(d, gc, color);
+    XDrawString(d, w, gc, x, y, text, strlen(text));
+}
+
+void DisplayWin::fill_rect(int x, int y, int w, int h, unsigned long color) {
+    XSetForeground(d, gc, color);
+    XFillRectangle(d, this->w, gc, x, y, w, h);
 }
