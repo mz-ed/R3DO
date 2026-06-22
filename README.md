@@ -1,6 +1,6 @@
 # R3DO — Interactive 3D Ray Tracer
 
-A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 grid of abstract objects (spheres, boxes) using keyboard controls.
+A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 grid of abstract objects (spheres, boxes) using keyboard and mouse controls.
 
 ## Controls
 
@@ -10,8 +10,20 @@ A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 gr
 | A/D | Strafe left/right |
 | Q/E | Move up/down |
 | ← → ↑ ↓ | Look around |
-| Space | Teleport to origin |
+| Space | Full-quality re-render (4 samples/px) |
 | Esc | Quit |
+| **Mouse** | Click side menu buttons |
+
+## Interactive Menu
+
+A side panel on the right provides:
+
+- **Add Sphere** — places a sphere 3 units ahead in the first empty grid cell
+- **Add Box** — places an axis-aligned box at the same location
+- **Clear All** — removes all objects from the grid
+- Object counter and camera position display
+
+New objects cycle through a 10-color palette.
 
 ## Build
 
@@ -24,19 +36,21 @@ g++ -std=c++11 -O3 main.cpp display.cpp -lX11 -o renderer
 
 ## How it works
 
-- **DDA traversal**: rays step through the grid using a 3D Digital Differential Analyzer, visiting only the cells along the ray path (~6–12 per ray) instead of checking all 216 cells.
-- **Primitives**: spheres (`sphere.hpp`) and axis-aligned boxes (`box.hpp`) placed in grid cells — 10 spheres and 3 boxes.
+- **DDA traversal**: rays step through the grid using a 3D Digital Differential Analyzer, visiting only the cells along the ray path (~6–12 per ray) instead of checking all 1000 cells.
+- **Primitives**: spheres (`sphere.hpp`) and axis-aligned boxes (`box.hpp`) placed in grid cells — 10 spheres and 3 boxes by default.
 - **Lighting**: simple directional diffuse shading with a single light source, gamma-corrected (sqrt) output.
-- **Viewport**: 64° FOV, samples 2 rays per pixel for basic anti-aliasing.
+- **Multi-sampling**: low quality (1 sample/px) during movement for speed; full quality (4 samples/px) on Space.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `main.cpp` | Scene setup, camera, render loop, event handling |
-| `display.hpp` / `display.cpp` | X11 window wrapper (keyboard, mouse, pixels) |
-| `v3.hpp` | 3D vector math (Vec3, operators, cross, unit) |
-| `hittable.hpp` | Abstract Hittable interface + Ray + HitRecord |
-| `sphere.hpp` | Sphere primitive |
+| `main.cpp` | Scene setup, UI buttons, render loop, event handling |
+| `camera.hpp` | Camera with WASD movement and yaw/pitch rotation |
+| `display.hpp` / `display.cpp` | X11 window wrapper (keyboard, mouse, pixels, text) |
+| `v3.hpp` | 3D vector math (Vec3, operators, cross, dot, unit) |
+| `ray.hpp` | Ray class (origin, direction, at(t)) |
+| `hittable.hpp` | Abstract Hittable interface + HitRecord |
+| `sphere.hpp` | Sphere primitive (quadratic intersection) |
 | `box.hpp` | Axis-aligned box primitive (slab method) |
-| `grid.hpp` | 10×10×10 grid with DDA ray traversal
+| `grid.hpp` | 10×10×10 grid with DDA ray traversal |
