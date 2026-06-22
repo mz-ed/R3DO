@@ -4,6 +4,7 @@
 #include "sphere.hpp"
 #include "box.hpp"
 #include "grid.hpp"
+#include "camera.hpp"
 #include "display.hpp"
 #include <iostream>
 #include <cmath>
@@ -24,32 +25,6 @@ Vec3 ray_color(const Ray& r, const Grid& grid, const Vec3& light_dir) {
 
     return bg;
 }
-
-struct Camera {
-    Vec3 pos;
-    double yaw;
-    double pitch;
-
-    Camera(Vec3 p, double y, double pi) : pos(p), yaw(y), pitch(pi) {}
-
-    Vec3 forward() const {
-        return Vec3(-sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch));
-    }
-
-    Vec3 right() const {
-        return Vec3(cos(yaw), 0, -sin(yaw));
-    }
-
-    void move_fwd(double d) { pos = pos + forward() * d; }
-    void move_right(double d) { pos = pos + right() * d; }
-    void move_up(double d) { pos.y += d; }
-    void rotate(double dyaw, double dpitch) {
-        yaw += dyaw;
-        pitch += dpitch;
-        if (pitch > 1.5) pitch = 1.5;
-        if (pitch < -1.5) pitch = -1.5;
-    }
-};
 
 void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
                   int image_width, int image_height, int samples,
