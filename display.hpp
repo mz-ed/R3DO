@@ -12,7 +12,7 @@ class DisplayWin {
     XImage* img;
     Atom wm_delete;
     int width_, height_;
-    bool closed_;
+    bool closed_, fullscreen_;
     unsigned int* data_;
     int last_keysym_;
     int mouse_x_, mouse_y_;
@@ -51,6 +51,9 @@ public:
     void draw_text(int x, int y, const char* text, unsigned long color);
     void fill_rect(int x, int y, int w, int h, unsigned long color);
     void draw_crosshair(int cx, int cy, int size, unsigned long color);
+    bool is_fullscreen() const { return fullscreen_; }
+    void toggle_fullscreen();
+    void resize(int new_w, int new_h);
 };
 
 #endif

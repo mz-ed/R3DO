@@ -16,13 +16,11 @@ int main() {
     int nx = 10, ny = 10, nz = 10;
     double cell_size = 0.8;
     Vec3 grid_center(0, 0, 0);
-    int image_width = 800;
-    int image_height = 600;
     int hq_samples = 4;
     int lq_samples = 1;
     Vec3 light_dir(1, 2, 1);
 
-    DisplayWin display(image_width, image_height, "R3DO - 3D Space");
+    DisplayWin display(800, 600, "R3DO - 3D Space");
     const char* SAVE_PATH = "saves/default.r3do";
 
     Grid grid(nx, ny, nz, cell_size, grid_center);
@@ -43,9 +41,9 @@ int main() {
     UI ui(grid, cam, display);
 
     std::cout << "Initial render..." << std::endl;
-    render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
+    render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
     ui.draw();
-    display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
 
     bool running = true;
 
@@ -57,43 +55,43 @@ int main() {
             int mx = display.mouse_x();
             int my = display.mouse_y();
             display.clear_mouse();
-            if (mx >= 630 && ui.handle_click(mx, my)) {
+            if (mx >= display.width() - 170 && ui.handle_click(mx, my)) {
                 save_scene(grid, SAVE_PATH);
-                render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
+                render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
                 ui.draw();
-                display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
             }
         }
 
-        if (display.is_mouse_down() && display.mouse_press_x() < 630) {
+        if (display.is_mouse_down() && display.mouse_press_x() < display.width() - 170) {
             int dx = display.mouse_dx();
             int dy = display.mouse_dy();
             if (dx != 0 || dy != 0) {
                 display.clear_mouse_delta();
                 double sens = 0.005;
                 cam.rotate(-dx * sens, dy * sens);
-                render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
+                render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
                 ui.draw();
-                display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
             }
         }
 
         if (display.mouse_released()) {
             display.clear_mouse_released();
-            if (display.mouse_press_x() < 630) {
+            if (display.mouse_press_x() < display.width() - 170) {
                 int dx = display.mouse_x() - display.mouse_press_x();
                 int dy = display.mouse_y() - display.mouse_press_y();
                 int dist = (int)std::sqrt((double)(dx*dx + dy*dy));
                 if (dist < 5) {
                     HitRecord rec;
-                    if (hit_center(grid, cam, image_width, image_height, rec)) {
+                    if (hit_center(grid, cam, display.width(), display.height(), rec)) {
                         int i, j, k;
                         if (grid.world_to_cell(rec.p, i, j, k) && grid.get(i, j, k)) {
                             grid.set(i, j, k, nullptr);
                             save_scene(grid, SAVE_PATH);
-                            render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
+                            render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
                             ui.draw();
-                            display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+                            display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
                         }
                     }
                 }
@@ -119,20 +117,26 @@ int main() {
                 case XK_Right: cam.rotate(-rot_speed, 0); moved = true; break;
                 case XK_Up: cam.rotate(0, rot_speed); moved = true; break;
                 case XK_Down: cam.rotate(0, -rot_speed); moved = true; break;
+                case XK_F11:
+                    display.toggle_fullscreen();
+                    render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
+                    ui.draw();
+                    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+                    break;
                 case XK_space:
                     std::cout << "Full quality..." << std::endl;
-                    render_scene(grid, cam, display, image_width, image_height, hq_samples, light_dir);
+                    render_scene(grid, cam, display, display.width(), display.height(), hq_samples, light_dir);
                     ui.draw();
-                    display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+                    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
                     break;
                 case XK_Escape: running = false; break;
             }
 
             if (moved && running) {
                 std::cout << cam.pos.x << "," << cam.pos.y << "," << cam.pos.z << " " << std::flush;
-                render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
+                render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
                 ui.draw();
-                display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
                 std::cout << "done" << std::endl;
             }
         }

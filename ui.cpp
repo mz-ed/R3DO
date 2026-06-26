@@ -65,17 +65,17 @@ int UI::count_objects() const {
 }
 
 void UI::draw() {
-    display.fill_rect(MENU_X, 0, MENU_W, display.height(), 0x1a1a2e);
-    display.fill_rect(MENU_X - 2, 0, 2, display.height(), 0x444466);
+    display.fill_rect((display.width() - MENU_W), 0, MENU_W, display.height(), 0x1a1a2e);
+    display.fill_rect((display.width() - MENU_W) - 2, 0, 2, display.height(), 0x444466);
 
-    display.draw_text(MENU_X + 10, 22, "R3DO", 0xffffff);
-    display.fill_rect(MENU_X + 10, 28, 40, 1, 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 22, "R3DO", 0xffffff);
+    display.fill_rect((display.width() - MENU_W) + 10, 28, 40, 1, 0x666688);
 
     Button buttons[] = {
-        {MENU_X + 10, 45, 150, 28, "Add Sphere"},
-        {MENU_X + 10, 80, 150, 28, "Add Box"},
-        {MENU_X + 10, 115, 150, 28, "Clear All"},
-        {MENU_X + 10, 150, 150, 28, "Save"},
+        {(display.width() - MENU_W) + 10, 45, 150, 28, "Add Sphere"},
+        {(display.width() - MENU_W) + 10, 80, 150, 28, "Add Box"},
+        {(display.width() - MENU_W) + 10, 115, 150, 28, "Clear All"},
+        {(display.width() - MENU_W) + 10, 150, 150, 28, "Save"},
     };
 
     for (auto& btn : buttons) {
@@ -86,26 +86,26 @@ void UI::draw() {
 
     char buf[64];
     snprintf(buf, sizeof(buf), "Objects: %d", count_objects());
-    display.draw_text(MENU_X + 10, 200, buf, 0xaaaaaa);
+    display.draw_text((display.width() - MENU_W) + 10, 200, buf, 0xaaaaaa);
 
     snprintf(buf, sizeof(buf), "Cam: %.1f %.1f %.1f", cam.pos.x, cam.pos.y, cam.pos.z);
-    display.draw_text(MENU_X + 10, 220, buf, 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 220, buf, 0x666688);
 
     if (save_msg_timer_ > 0) {
         save_msg_timer_--;
-        display.draw_text(MENU_X + 10, 245, save_msg_, 0x55ff55);
+        display.draw_text((display.width() - MENU_W) + 10, 245, save_msg_, 0x55ff55);
     }
 
-    display.draw_text(MENU_X + 10, 270, "Controls:", 0x888888);
-    display.draw_text(MENU_X + 10, 287, "WASD move", 0x666688);
-    display.draw_text(MENU_X + 10, 302, "Arrows look", 0x666688);
-    display.draw_text(MENU_X + 10, 317, "Q/E up/down", 0x666688);
-    display.draw_text(MENU_X + 10, 332, "Space: HQ", 0x666688);
-    display.draw_text(MENU_X + 10, 347, "Esc: quit", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 270, "Controls:", 0x888888);
+    display.draw_text((display.width() - MENU_W) + 10, 287, "WASD move", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 302, "Arrows look", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 317, "Q/E up/down", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 332, "Space: HQ", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 347, "Esc: quit", 0x666688);
 }
 
 bool UI::handle_click(int mx, int my) {
-    if (mx < MENU_X || mx >= MENU_X + MENU_W)
+    if (mx < (display.width() - MENU_W) || mx >= (display.width() - MENU_W) + MENU_W)
         return false;
 
     std::cerr << "CLICK at (" << mx << "," << my << ")" << std::endl;

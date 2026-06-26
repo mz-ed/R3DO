@@ -4,7 +4,7 @@
 #include <cstdio>
 
 DisplayWin::DisplayWin(int width, int height, const char* title)
-    : width_(width), height_(height), closed_(false), data_(nullptr),
+    : width_(width), height_(height), closed_(false), fullscreen_(false), data_(nullptr),
       last_keysym_(0), mouse_x_(0), mouse_y_(0),
       mouse_dx_(0), mouse_dy_(0), mouse_press_x_(0), mouse_press_y_(0),
       mouse_clicked_(false), mouse_down_(false), mouse_released_(false) {
@@ -119,4 +119,47 @@ void DisplayWin::draw_crosshair(int cx, int cy, int size, unsigned long color) {
     XSetForeground(d, gc, color);
     XFillRectangle(d, w, gc, cx - 1, cy - size, 3, size * 2 + 1);
     XFillRectangle(d, w, gc, cx - size, cy - 1, size * 2 + 1, 3);
+}
+
+void DisplayWin::resize(int new_w, int new_h) {
+    if (img) {
+        img->data = nullptr;
+        XDestroyImage(img);
+    }
+    delete[] data_;
+    data_ = new unsigned int[new_w * new_h]();
+
+    Visual* vis = DefaultVisual(d, DefaultScreen(d));
+    int depth = DefaultDepth(d, DefaultScreen(d));
+    img = XCreateImage(d, vis, depth, ZPixmap, 0, nullptr, new_w, new_h, 32, 0);
+    img->data = (char*)data_;
+
+    width_ = new_w;
+    height_ = new_h;
+    XResizeWindow(d, w, new_w, new_h);
+}
+
+void DisplayWin::toggle_fullscreen() {
+    fullscreen_ = !fullscreen_;
+
+    if (fullscreen_) {
+        Screen* s = DefaultScreenOfDisplay(d);
+        resize(WidthOfScreen(s), HeightOfScreen(s));
+    } else {
+        resize(800, 600);
+    }
+
+    Atom wm_state = XInternAtom(d, "_NET_WM_STATE", False);
+    Atom fs = XInternAtom(d, "_NET_WM_STATE_FULLSCREEN", False);
+    XEvent xev;
+    memset(&xev, 0, sizeof(xev));
+    xev.type = ClientMessage;
+    xev.xclient.window = w;
+    xev.xclient.message_type = wm_state;
+    xev.xclient.format = 32;
+    xev.xclient.data.l[0] = fullscreen_ ? 1 : 0;
+    xev.xclient.data.l[1] = fs;
+    xev.xclient.data.l[2] = 0;
+    XSendEvent(d, DefaultRootWindow(d), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
+    XFlush(d);
 }

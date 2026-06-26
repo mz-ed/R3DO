@@ -12,7 +12,6 @@ class UI {
     DisplayWin& display;
     int palette_idx_;
 
-    static const int MENU_X = 630;
     static const int MENU_W = 170;
 
     struct Button {

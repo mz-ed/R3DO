@@ -15,6 +15,7 @@ A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 gr
 | **Mouse** | Click side menu buttons |
 | **Left Click (scene)** | Remove object under crosshair |
 | **Left Drag (scene)** | Look around (mouse look) |
+| F11 | Toggle fullscreen |
 
 ## Interactive Menu
 
