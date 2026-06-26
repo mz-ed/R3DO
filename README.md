@@ -30,12 +30,18 @@ New objects cycle through a 10-color palette.
 
 A green `+` at screen center lets you target objects. Click anywhere in the 3D view (left of the menu panel) to delete the object under the crosshair. The crosshair persists across all renders and movements.
 
+## Save System
+
+All scene changes are automatically saved to `saves/default.r3do` as a plain-text file. The save is written after every add, remove, or clear operation. On startup, the last saved state is loaded — any changes you make persist across sessions.
+
+To reset to the default scene, delete `saves/default.r3do` and restart.
+
 ## Build
 
 Requires libx11-dev.
 
 ```sh
-g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp -lX11 -o renderer
+g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp -lX11 -o renderer
 ./renderer
 ```
 

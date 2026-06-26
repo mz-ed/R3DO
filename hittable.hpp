@@ -21,6 +21,8 @@ class Hittable {
 public:
     virtual ~Hittable() = default;
     virtual bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const = 0;
+    virtual const char* type_name() const { return "unknown"; }
+    virtual Vec3 get_color() const { return Vec3(0,0,0); }
 };
 
 #endif

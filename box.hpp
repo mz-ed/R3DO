@@ -13,6 +13,9 @@ public:
     Box(const Vec3& min, const Vec3& max, const Vec3& color)
         : min(min), max(max), color(color) {}
 
+    const char* type_name() const override { return "box"; }
+    Vec3 get_color() const override { return color; }
+
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
         if (t_max <= t_min) return false;
         double tmin = t_min;

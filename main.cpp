@@ -7,6 +7,7 @@
 #include "camera.hpp"
 #include "display.hpp"
 #include "ui.hpp"
+#include "saver.hpp"
 #include <iostream>
 #include <cmath>
 #include <cstdlib>
@@ -91,8 +92,13 @@ int main() {
     Vec3 grid_center(0, 0, 0);
 
     Grid grid(nx, ny, nz, cell_size, grid_center);
+    const char* SAVE_PATH = "saves/default.r3do";
 
-    grid.set(0, 0, 0, new Sphere(grid.cell_center(0, 0, 0), cell_size * 0.45, Vec3(1, 0.2, 0.2)));
+    load_scene(SAVE_PATH, grid);
+    bool loaded = true;
+    if (!grid.get(0, 0, 0) && !grid.get(9, 9, 9) && !grid.get(4, 4, 4)) {
+        loaded = false;
+        grid.set(0, 0, 0, new Sphere(grid.cell_center(0, 0, 0), cell_size * 0.45, Vec3(1, 0.2, 0.2)));
     grid.set(9, 9, 9, new Sphere(grid.cell_center(9, 9, 9), cell_size * 0.45, Vec3(0.2, 1, 0.3)));
     grid.set(0, 9, 0, new Sphere(grid.cell_center(0, 9, 0), cell_size * 0.45, Vec3(1, 1, 0.2)));
     grid.set(9, 0, 9, new Sphere(grid.cell_center(9, 0, 9), cell_size * 0.45, Vec3(1, 0.5, 0)));
@@ -107,6 +113,8 @@ int main() {
     grid.set(2, 2, 2, new Box(grid.cell_center(2, 2, 2) - box_half, grid.cell_center(2, 2, 2) + box_half, Vec3(0.1, 0.8, 0.3)));
     grid.set(7, 7, 7, new Box(grid.cell_center(7, 7, 7) - box_half, grid.cell_center(7, 7, 7) + box_half, Vec3(0.8, 0.2, 0.3)));
     grid.set(3, 8, 2, new Box(grid.cell_center(3, 8, 2) - box_half, grid.cell_center(3, 8, 2) + box_half, Vec3(0.3, 0.5, 1)));
+    }
+    if (!loaded) save_scene(grid, SAVE_PATH);
 
     int image_width = 800;
     int image_height = 600;
@@ -139,12 +147,14 @@ int main() {
                     int i, j, k;
                     if (grid.world_to_cell(rec.p, i, j, k) && grid.get(i, j, k)) {
                         grid.set(i, j, k, nullptr);
+                        save_scene(grid, SAVE_PATH);
                         render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
                         ui.draw();
                         display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
                     }
                 }
             } else if (ui.handle_click(mx, my)) {
+                save_scene(grid, SAVE_PATH);
                 render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
                 ui.draw();
                 display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);

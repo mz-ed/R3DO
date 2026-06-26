@@ -13,6 +13,9 @@ public:
     Sphere(const Vec3& center, double radius, const Vec3& color)
         : center(center), radius(radius), color(color) {}
 
+    const char* type_name() const override { return "sphere"; }
+    Vec3 get_color() const override { return color; }
+
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
         Vec3 oc = r.origin() - center;
         double a = dot(r.direction(), r.direction());
