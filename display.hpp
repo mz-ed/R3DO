@@ -39,6 +39,7 @@ public:
     void process_events();
     void draw_text(int x, int y, const char* text, unsigned long color);
     void fill_rect(int x, int y, int w, int h, unsigned long color);
+    void draw_crosshair(int cx, int cy, int size, unsigned long color);
 };
 
 #endif

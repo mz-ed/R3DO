@@ -94,3 +94,9 @@ void DisplayWin::fill_rect(int x, int y, int w, int h, unsigned long color) {
     XSetForeground(d, gc, color);
     XFillRectangle(d, this->w, gc, x, y, w, h);
 }
+
+void DisplayWin::draw_crosshair(int cx, int cy, int size, unsigned long color) {
+    XSetForeground(d, gc, color);
+    XFillRectangle(d, w, gc, cx - 1, cy - size, 3, size * 2 + 1);
+    XFillRectangle(d, w, gc, cx - size, cy - 1, size * 2 + 1, 3);
+}
