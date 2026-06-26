@@ -30,13 +30,15 @@ New objects cycle through a 10-color palette.
 
 A green `+` at screen center lets you target objects. Click anywhere in the 3D view (left of the menu panel) to delete the object under the crosshair. The crosshair persists across all renders and movements.
 
+## Start Screen
+
+On launch you'll see a start screen with **New Scene** (empty grid) and **Load Scene** (pick from existing saves). The default autosave (`saves/default.r3do`) is no longer loaded automatically — use Load to pick any save or New to start fresh.
+
 ## Save System
 
-All scene changes are automatically saved to `saves/default.r3do` as a plain-text file. The save is written after every add, remove, or clear operation. On startup, the last saved state is loaded — any changes you make persist across sessions.
+All scene changes are automatically saved to `saves/default.r3do` after every add, remove, or clear operation.
 
-To manually name and store a scene, click **Save** in the menu panel, then type a name in the terminal. The file is written to `saves/<name>.r3do` and can be loaded later.
-
-To reset to the default scene, delete the save files in the `saves/` directory and restart.
+To manually snapshot a scene, click **Save** in the side panel and type a name in the terminal. The file is written to `saves/<name>.r3do`. On the start screen, **Load Scene** lists all `.r3do` files found in the `saves/` directory.
 
 ## Build
 

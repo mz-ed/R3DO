@@ -12,7 +12,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <unistd.h>
+#include <dirent.h>
+#include <vector>
+#include <string>
+#include <algorithm>
 
 Vec3 ray_color(const Ray& r, const Grid& grid, const Vec3& light_dir) {
     HitRecord rec;
@@ -86,36 +91,130 @@ bool hit_center(const Grid& grid, const Camera& cam,
     return grid.hit(r, 0.001, 1000.0, rec);
 }
 
+// ── Start screen ──────────────────────────────────────────────────
+
+enum class StartAction { NEW_SCENE, LOAD_SCENE, QUIT };
+
+static std::vector<std::string> list_saves() {
+    std::vector<std::string> saves;
+    DIR* dir = opendir("saves");
+    if (!dir) return saves;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string name = entry->d_name;
+        if (name.size() > 5 && name.substr(name.size() - 5) == ".r3do") {
+            saves.push_back(name.substr(0, name.size() - 5));
+        }
+    }
+    closedir(dir);
+    std::sort(saves.begin(), saves.end());
+    return saves;
+}
+
+static StartAction show_start_screen(DisplayWin& display) {
+    int w = display.width(), h = display.height();
+    const int bw = 220, bh = 44;
+    const int bx = (w - bw) / 2;
+    const int by_new = 290, by_load = by_new + bh + 12;
+
+    while (true) {
+        display.process_events();
+        if (display.is_closed()) return StartAction::QUIT;
+
+        int key = display.get_key();
+        display.clear_key();
+        if (key == XK_Escape) return StartAction::QUIT;
+
+        display.fill_rect(0, 0, w, h, 0x0d0d1a);
+
+        display.draw_text(w/2 - 32, 160, "R3DO", 0xffffff);
+        display.draw_text(w/2 - 82, 180, "Interactive 3D Ray Tracer", 0x666688);
+
+        display.fill_rect(bx, by_new, bw, bh, 0x333355);
+        display.fill_rect(bx + 1, by_new + 1, bw - 2, bh - 2, 0x3d3d6b);
+        display.draw_text(bx + 55, by_new + 28, "New Scene", 0xccccff);
+
+        display.fill_rect(bx, by_load, bw, bh, 0x333355);
+        display.fill_rect(bx + 1, by_load + 1, bw - 2, bh - 2, 0x3d3d6b);
+        display.draw_text(bx + 50, by_load + 28, "Load Scene", 0xccccff);
+
+        display.draw_text(w/2 - 100, h - 30, "Arrow keys / WASD to move  |  Esc to quit", 0x444466);
+
+        if (display.mouse_clicked()) {
+            int mx = display.mouse_x();
+            int my = display.mouse_y();
+            display.clear_mouse();
+
+            if (mx >= bx && mx < bx + bw && my >= by_new && my < by_new + bh)
+                return StartAction::NEW_SCENE;
+            if (mx >= bx && mx < bx + bw && my >= by_load && my < by_load + bh)
+                return StartAction::LOAD_SCENE;
+        }
+
+        usleep(10000);
+    }
+}
+
+static std::string show_load_screen(DisplayWin& display) {
+    auto saves = list_saves();
+    int w = display.width(), h = display.height();
+    const int bw = 320, bh = 36;
+    const int bx = (w - bw) / 2;
+
+    while (true) {
+        display.process_events();
+        if (display.is_closed()) return "";
+
+        int key = display.get_key();
+        display.clear_key();
+        if (key == XK_Escape) return "";
+
+        display.fill_rect(0, 0, w, h, 0x0d0d1a);
+        display.draw_text(w/2 - 48, 80, "Load Scene", 0xffffff);
+
+        int y = 120;
+        if (saves.empty()) {
+            display.draw_text(bx, y, "No saves found", 0x888888);
+            y += 40;
+        } else {
+            for (size_t i = 0; i < saves.size(); i++) {
+                display.fill_rect(bx, y, bw, bh, 0x333355);
+                display.fill_rect(bx + 1, y + 1, bw - 2, bh - 2, 0x3d3d6b);
+                display.draw_text(bx + 10, y + 24, saves[i].c_str(), 0xccccff);
+                y += bh + 6;
+            }
+        }
+
+        int back_y = y + 12;
+        display.fill_rect(bx, back_y, bw, bh, 0x333355);
+        display.fill_rect(bx + 1, back_y + 1, bw - 2, bh - 2, 0x3d3d6b);
+        display.draw_text(bx + 135, back_y + 24, "Back", 0xccccff);
+
+        if (display.mouse_clicked()) {
+            int mx = display.mouse_x();
+            int my = display.mouse_y();
+            display.clear_mouse();
+
+            y = 120;
+            for (size_t i = 0; i < saves.size(); i++) {
+                if (mx >= bx && mx < bx + bw && my >= y && my < y + bh)
+                    return saves[i];
+                y += bh + 6;
+            }
+            if (mx >= bx && mx < bx + bw && my >= back_y && my < back_y + bh)
+                return "";
+        }
+
+        usleep(10000);
+    }
+}
+
+// ── Main ───────────────────────────────────────────────────────────
+
 int main() {
     int nx = 10, ny = 10, nz = 10;
     double cell_size = 0.8;
     Vec3 grid_center(0, 0, 0);
-
-    Grid grid(nx, ny, nz, cell_size, grid_center);
-    const char* SAVE_PATH = "saves/default.r3do";
-
-    load_scene(SAVE_PATH, grid);
-    bool loaded = true;
-    if (!grid.get(0, 0, 0) && !grid.get(9, 9, 9) && !grid.get(4, 4, 4)) {
-        loaded = false;
-        grid.set(0, 0, 0, new Sphere(grid.cell_center(0, 0, 0), cell_size * 0.45, Vec3(1, 0.2, 0.2)));
-    grid.set(9, 9, 9, new Sphere(grid.cell_center(9, 9, 9), cell_size * 0.45, Vec3(0.2, 1, 0.3)));
-    grid.set(0, 9, 0, new Sphere(grid.cell_center(0, 9, 0), cell_size * 0.45, Vec3(1, 1, 0.2)));
-    grid.set(9, 0, 9, new Sphere(grid.cell_center(9, 0, 9), cell_size * 0.45, Vec3(1, 0.5, 0)));
-    grid.set(4, 4, 4, new Sphere(grid.cell_center(4, 4, 4), cell_size * 0.45, Vec3(0.2, 0.4, 1)));
-    grid.set(5, 5, 5, new Sphere(grid.cell_center(5, 5, 5), cell_size * 0.45, Vec3(0.9, 0.2, 0.9)));
-    grid.set(2, 7, 3, new Sphere(grid.cell_center(2, 7, 3), cell_size * 0.45, Vec3(0.2, 0.9, 0.9)));
-    grid.set(7, 2, 6, new Sphere(grid.cell_center(7, 2, 6), cell_size * 0.45, Vec3(0.8, 0.6, 0.2)));
-    grid.set(1, 1, 8, new Sphere(grid.cell_center(1, 1, 8), cell_size * 0.45, Vec3(0.5, 0.3, 1)));
-    grid.set(8, 8, 1, new Sphere(grid.cell_center(8, 8, 1), cell_size * 0.45, Vec3(1, 0.6, 0.6)));
-
-    Vec3 box_half = Vec3(cell_size * 0.38, cell_size * 0.38, cell_size * 0.38);
-    grid.set(2, 2, 2, new Box(grid.cell_center(2, 2, 2) - box_half, grid.cell_center(2, 2, 2) + box_half, Vec3(0.1, 0.8, 0.3)));
-    grid.set(7, 7, 7, new Box(grid.cell_center(7, 7, 7) - box_half, grid.cell_center(7, 7, 7) + box_half, Vec3(0.8, 0.2, 0.3)));
-    grid.set(3, 8, 2, new Box(grid.cell_center(3, 8, 2) - box_half, grid.cell_center(3, 8, 2) + box_half, Vec3(0.3, 0.5, 1)));
-    }
-    if (!loaded) save_scene(grid, SAVE_PATH);
-
     int image_width = 800;
     int image_height = 600;
     int hq_samples = 4;
@@ -123,6 +222,20 @@ int main() {
     Vec3 light_dir(1, 2, 1);
 
     DisplayWin display(image_width, image_height, "R3DO - 3D Space");
+    const char* SAVE_PATH = "saves/default.r3do";
+
+    // ── Start screen ──
+    StartAction action = show_start_screen(display);
+    if (action == StartAction::QUIT) return 0;
+
+    Grid grid(nx, ny, nz, cell_size, grid_center);
+
+    if (action == StartAction::LOAD_SCENE) {
+        std::string name = show_load_screen(display);
+        if (name.empty()) return 0;
+        load_scene("saves/" + name + ".r3do", grid);
+    }
+
     Camera cam(Vec3(3.0, 1.5, 4.0), 0, -0.15);
     UI ui(grid, cam, display);
 
