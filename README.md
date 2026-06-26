@@ -13,6 +13,7 @@ A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 gr
 | Space | Full-quality re-render (4 samples/px) |
 | Esc | Quit |
 | **Mouse** | Click side menu buttons |
+| **Left Click (scene)** | Remove object under crosshair |
 
 ## Interactive Menu
 
@@ -25,12 +26,16 @@ A side panel on the right provides:
 
 New objects cycle through a 10-color palette.
 
+## Crosshair
+
+A green `+` at screen center lets you target objects. Click anywhere in the 3D view (left of the menu panel) to delete the object under the crosshair. The crosshair persists across all renders and movements.
+
 ## Build
 
 Requires libx11-dev.
 
 ```sh
-g++ -std=c++11 -O3 main.cpp display.cpp -lX11 -o renderer
+g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp -lX11 -o renderer
 ./renderer
 ```
 
@@ -54,3 +59,4 @@ g++ -std=c++11 -O3 main.cpp display.cpp -lX11 -o renderer
 | `sphere.hpp` | Sphere primitive (quadratic intersection) |
 | `box.hpp` | Axis-aligned box primitive (slab method) |
 | `grid.hpp` | 10×10×10 grid with DDA ray traversal |
+| `ui.hpp` / `ui.cpp` | Side-panel menu (add sphere/box, clear) |
