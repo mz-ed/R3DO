@@ -46,7 +46,7 @@ To manually snapshot a scene, click **Save** in the side panel and type a name i
 Requires libx11-dev.
 
 ```sh
-g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp -lX11 -o renderer
+g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp render.cpp startscreen.cpp -lX11 -o renderer
 ./renderer
 ```
 
@@ -61,7 +61,9 @@ g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp -lX11 -o renderer
 
 | File | Role |
 |------|------|
-| `main.cpp` | Scene setup, UI buttons, render loop, event handling |
+| `main.cpp` | Entry point, game loop, event handling |
+| `render.hpp` / `render.cpp` | Ray tracing (ray_color, render_scene, hit_center) |
+| `startscreen.hpp` / `startscreen.cpp` | Start screen, load screen, save listing |
 | `camera.hpp` | Camera with WASD movement and yaw/pitch rotation |
 | `display.hpp` / `display.cpp` | X11 window wrapper (keyboard, mouse, pixels, text) |
 | `v3.hpp` | 3D vector math (Vec3, operators, cross, dot, unit) |
@@ -71,3 +73,4 @@ g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp -lX11 -o renderer
 | `box.hpp` | Axis-aligned box primitive (slab method) |
 | `grid.hpp` | 10×10×10 grid with DDA ray traversal |
 | `ui.hpp` / `ui.cpp` | Side-panel menu (add sphere/box, clear) |
+| `saver.hpp` / `saver.cpp` | Save/load scene to .r3do files |

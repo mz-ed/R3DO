@@ -1,215 +1,16 @@
 #include "v3.hpp"
 #include "ray.hpp"
 #include "hittable.hpp"
-#include "sphere.hpp"
-#include "box.hpp"
 #include "grid.hpp"
 #include "camera.hpp"
 #include "display.hpp"
 #include "ui.hpp"
 #include "saver.hpp"
+#include "render.hpp"
+#include "startscreen.hpp"
 #include <iostream>
 #include <cmath>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
 #include <unistd.h>
-#include <dirent.h>
-#include <vector>
-#include <string>
-#include <algorithm>
-
-Vec3 ray_color(const Ray& r, const Grid& grid, const Vec3& light_dir) {
-    HitRecord rec;
-    Vec3 light = unit_vector(light_dir);
-    Vec3 bg(0.05, 0.05, 0.15);
-
-    if (grid.hit(r, 0.001, 1000.0, rec)) {
-        double diff = std::max(0.0, dot(rec.normal, light));
-        double ambient = 0.3;
-        double intensity = ambient + (1.0 - ambient) * diff;
-        return rec.color * intensity;
-    }
-
-    return bg;
-}
-
-void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
-                  int image_width, int image_height, int samples,
-                  const Vec3& light_dir) {
-    double viewport_height = 2.5;
-    double viewport_width = viewport_height * image_width / image_height;
-    double focal_length = 2.0;
-
-    Vec3 fwd = cam.forward();
-    Vec3 rgt = cam.right();
-    Vec3 up = cross(rgt, fwd);
-
-    Vec3 horizontal = viewport_width * rgt;
-    Vec3 vertical = viewport_height * up;
-    Vec3 lower_left = cam.pos - horizontal/2 - vertical/2 + fwd * focal_length;
-
-    for (int j = image_height - 1; j >= 0; --j) {
-        for (int i = 0; i < image_width; ++i) {
-            Vec3 color;
-            for (int s = 0; s < samples; ++s) {
-                double u_off = (s % 2) * 0.5 + 0.25;
-                double v_off = (s / 2) * 0.5 + 0.25;
-                double u = (i + u_off) / (image_width - 1);
-                double v = (j + v_off) / (image_height - 1);
-                Ray r(cam.pos, lower_left + u*horizontal + v*vertical - cam.pos);
-                color = color + ray_color(r, grid, light_dir);
-            }
-            color = color / samples;
-            int ir = int(255.999 * std::sqrt(color.x));
-            int ig = int(255.999 * std::sqrt(color.y));
-            int ib = int(255.999 * std::sqrt(color.z));
-            display.set_pixel(i, j, ir, ig, ib);
-        }
-        if (j % 100 == 0)
-            std::cout << "\r" << (100 * (image_height - j) / image_height) << "% " << std::flush;
-    }
-    display.update();
-    std::cout << "\r   \r" << std::flush;
-}
-
-bool hit_center(const Grid& grid, const Camera& cam,
-                int image_width, int image_height, HitRecord& rec) {
-    double viewport_height = 2.5;
-    double viewport_width = viewport_height * image_width / image_height;
-    double focal_length = 2.0;
-
-    Vec3 fwd = cam.forward();
-    Vec3 rgt = cam.right();
-    Vec3 up = cross(rgt, fwd);
-
-    Vec3 horizontal = viewport_width * rgt;
-    Vec3 vertical = viewport_height * up;
-    Vec3 lower_left = cam.pos - horizontal/2 - vertical/2 + fwd * focal_length;
-
-    Ray r(cam.pos, lower_left + 0.5*horizontal + 0.5*vertical - cam.pos);
-    return grid.hit(r, 0.001, 1000.0, rec);
-}
-
-// ── Start screen ──────────────────────────────────────────────────
-
-enum class StartAction { NEW_SCENE, LOAD_SCENE, QUIT };
-
-static std::vector<std::string> list_saves() {
-    std::vector<std::string> saves;
-    DIR* dir = opendir("saves");
-    if (!dir) return saves;
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        std::string name = entry->d_name;
-        if (name.size() > 5 && name.substr(name.size() - 5) == ".r3do") {
-            saves.push_back(name.substr(0, name.size() - 5));
-        }
-    }
-    closedir(dir);
-    std::sort(saves.begin(), saves.end());
-    return saves;
-}
-
-static StartAction show_start_screen(DisplayWin& display) {
-    int w = display.width(), h = display.height();
-    const int bw = 220, bh = 44;
-    const int bx = (w - bw) / 2;
-    const int by_new = 290, by_load = by_new + bh + 12;
-
-    while (true) {
-        display.process_events();
-        if (display.is_closed()) return StartAction::QUIT;
-
-        int key = display.get_key();
-        display.clear_key();
-        if (key == XK_Escape) return StartAction::QUIT;
-
-        display.fill_rect(0, 0, w, h, 0x0d0d1a);
-
-        display.draw_text(w/2 - 32, 160, "R3DO", 0xffffff);
-        display.draw_text(w/2 - 82, 180, "Interactive 3D Ray Tracer", 0x666688);
-
-        display.fill_rect(bx, by_new, bw, bh, 0x333355);
-        display.fill_rect(bx + 1, by_new + 1, bw - 2, bh - 2, 0x3d3d6b);
-        display.draw_text(bx + 55, by_new + 28, "New Scene", 0xccccff);
-
-        display.fill_rect(bx, by_load, bw, bh, 0x333355);
-        display.fill_rect(bx + 1, by_load + 1, bw - 2, bh - 2, 0x3d3d6b);
-        display.draw_text(bx + 50, by_load + 28, "Load Scene", 0xccccff);
-
-        display.draw_text(w/2 - 100, h - 30, "Arrow keys / WASD to move  |  Esc to quit", 0x444466);
-
-        if (display.mouse_clicked()) {
-            int mx = display.mouse_x();
-            int my = display.mouse_y();
-            display.clear_mouse();
-
-            if (mx >= bx && mx < bx + bw && my >= by_new && my < by_new + bh)
-                return StartAction::NEW_SCENE;
-            if (mx >= bx && mx < bx + bw && my >= by_load && my < by_load + bh)
-                return StartAction::LOAD_SCENE;
-        }
-
-        usleep(10000);
-    }
-}
-
-static std::string show_load_screen(DisplayWin& display) {
-    auto saves = list_saves();
-    int w = display.width(), h = display.height();
-    const int bw = 320, bh = 36;
-    const int bx = (w - bw) / 2;
-
-    while (true) {
-        display.process_events();
-        if (display.is_closed()) return "";
-
-        int key = display.get_key();
-        display.clear_key();
-        if (key == XK_Escape) return "";
-
-        display.fill_rect(0, 0, w, h, 0x0d0d1a);
-        display.draw_text(w/2 - 48, 80, "Load Scene", 0xffffff);
-
-        int y = 120;
-        if (saves.empty()) {
-            display.draw_text(bx, y, "No saves found", 0x888888);
-            y += 40;
-        } else {
-            for (size_t i = 0; i < saves.size(); i++) {
-                display.fill_rect(bx, y, bw, bh, 0x333355);
-                display.fill_rect(bx + 1, y + 1, bw - 2, bh - 2, 0x3d3d6b);
-                display.draw_text(bx + 10, y + 24, saves[i].c_str(), 0xccccff);
-                y += bh + 6;
-            }
-        }
-
-        int back_y = y + 12;
-        display.fill_rect(bx, back_y, bw, bh, 0x333355);
-        display.fill_rect(bx + 1, back_y + 1, bw - 2, bh - 2, 0x3d3d6b);
-        display.draw_text(bx + 135, back_y + 24, "Back", 0xccccff);
-
-        if (display.mouse_clicked()) {
-            int mx = display.mouse_x();
-            int my = display.mouse_y();
-            display.clear_mouse();
-
-            y = 120;
-            for (size_t i = 0; i < saves.size(); i++) {
-                if (mx >= bx && mx < bx + bw && my >= y && my < y + bh)
-                    return saves[i];
-                y += bh + 6;
-            }
-            if (mx >= bx && mx < bx + bw && my >= back_y && my < back_y + bh)
-                return "";
-        }
-
-        usleep(10000);
-    }
-}
-
-// ── Main ───────────────────────────────────────────────────────────
 
 int main() {
     int nx = 10, ny = 10, nz = 10;
@@ -226,7 +27,6 @@ int main() {
 
     Grid grid(nx, ny, nz, cell_size, grid_center);
 
-    // ── Start screen loop (back returns here) ──
     while (true) {
         StartAction action = show_start_screen(display);
         if (action == StartAction::QUIT) return 0;
