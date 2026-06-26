@@ -12,10 +12,12 @@ A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 gr
 | ← → ↑ ↓ | Look around |
 | Space | Full-quality re-render (4 samples/px) |
 | Esc | Quit |
+| F11 | Toggle windowed mode |
 | **Mouse** | Click side menu buttons |
 | **Left Click (scene)** | Remove object under crosshair |
 | **Left Drag (scene)** | Look around (mouse look) |
-| F11 | Toggle fullscreen |
+
+The program starts fullscreen at your display's native resolution. Press F11 to switch back to 800×600 windowed mode.
 
 ## Interactive Menu
 

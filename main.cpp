@@ -21,6 +21,7 @@ int main() {
     Vec3 light_dir(1, 2, 1);
 
     DisplayWin display(800, 600, "R3DO - 3D Space");
+    display.toggle_fullscreen();
     const char* SAVE_PATH = "saves/default.r3do";
 
     Grid grid(nx, ny, nz, cell_size, grid_center);

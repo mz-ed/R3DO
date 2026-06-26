@@ -25,7 +25,7 @@ StartAction show_start_screen(DisplayWin& display) {
     int w = display.width(), h = display.height();
     const int bw = 220, bh = 44;
     const int bx = (w - bw) / 2;
-    const int by_new = 290, by_load = by_new + bh + 12;
+    const int by_new = h / 2 - 30, by_load = by_new + bh + 12;
 
     while (true) {
         display.process_events();
@@ -37,8 +37,8 @@ StartAction show_start_screen(DisplayWin& display) {
 
         display.fill_rect(0, 0, w, h, 0x0d0d1a);
 
-        display.draw_text(w/2 - 32, 160, "R3DO", 0xffffff);
-        display.draw_text(w/2 - 82, 180, "Interactive 3D Ray Tracer", 0x666688);
+        display.draw_text(w/2 - 32, h * 2 / 7, "R3DO", 0xffffff);
+        display.draw_text(w/2 - 82, h * 2 / 7 + 22, "Interactive 3D Ray Tracer", 0x666688);
 
         display.fill_rect(bx, by_new, bw, bh, 0x333355);
         display.fill_rect(bx + 1, by_new + 1, bw - 2, bh - 2, 0x3d3d6b);
@@ -80,9 +80,9 @@ std::string show_load_screen(DisplayWin& display) {
         if (key == XK_Escape) return "";
 
         display.fill_rect(0, 0, w, h, 0x0d0d1a);
-        display.draw_text(w/2 - 48, 80, "Load Scene", 0xffffff);
+        display.draw_text(w/2 - 48, h / 6, "Load Scene", 0xffffff);
 
-        int y = 120;
+        int y = h / 5;
         if (saves.empty()) {
             display.draw_text(bx, y, "No saves found", 0x888888);
             y += 40;
@@ -105,7 +105,7 @@ std::string show_load_screen(DisplayWin& display) {
             int my = display.mouse_y();
             display.clear_mouse();
 
-            y = 120;
+            y = h / 5;
             for (size_t i = 0; i < saves.size(); i++) {
                 if (mx >= bx && mx < bx + bw && my >= y && my < y + bh)
                     return saves[i];
