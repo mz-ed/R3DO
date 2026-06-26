@@ -224,16 +224,19 @@ int main() {
     DisplayWin display(image_width, image_height, "R3DO - 3D Space");
     const char* SAVE_PATH = "saves/default.r3do";
 
-    // ── Start screen ──
-    StartAction action = show_start_screen(display);
-    if (action == StartAction::QUIT) return 0;
-
     Grid grid(nx, ny, nz, cell_size, grid_center);
 
-    if (action == StartAction::LOAD_SCENE) {
+    // ── Start screen loop (back returns here) ──
+    while (true) {
+        StartAction action = show_start_screen(display);
+        if (action == StartAction::QUIT) return 0;
+
+        if (action == StartAction::NEW_SCENE) break;
+
         std::string name = show_load_screen(display);
-        if (name.empty()) return 0;
+        if (name.empty()) continue;
         load_scene("saves/" + name + ".r3do", grid);
+        break;
     }
 
     Camera cam(Vec3(3.0, 1.5, 4.0), 0, -0.15);
