@@ -5,7 +5,9 @@
 
 DisplayWin::DisplayWin(int width, int height, const char* title)
     : width_(width), height_(height), closed_(false), data_(nullptr),
-      last_keysym_(0), mouse_x_(0), mouse_y_(0), mouse_clicked_(false) {
+      last_keysym_(0), mouse_x_(0), mouse_y_(0),
+      mouse_dx_(0), mouse_dy_(0), mouse_press_x_(0), mouse_press_y_(0),
+      mouse_clicked_(false), mouse_down_(false), mouse_released_(false) {
     d = XOpenDisplay(nullptr);
     if (!d) {
         fprintf(stderr, "Cannot open X display\n");
@@ -16,7 +18,7 @@ DisplayWin::DisplayWin(int width, int height, const char* title)
     w = XCreateSimpleWindow(d, root, 0, 0, width, height, 1,
         BlackPixel(d, screen), 0x222222);
     XStoreName(d, w, title);
-    XSelectInput(d, w, ExposureMask | KeyPressMask | ButtonPressMask | StructureNotifyMask);
+    XSelectInput(d, w, ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | ButtonMotionMask | StructureNotifyMask);
     wm_delete = XInternAtom(d, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(d, w, &wm_delete, 1);
     XMapWindow(d, w);
@@ -77,6 +79,24 @@ void DisplayWin::process_events() {
             mouse_x_ = e.xbutton.x;
             mouse_y_ = e.xbutton.y;
             mouse_clicked_ = true;
+            mouse_down_ = true;
+            mouse_released_ = false;
+            mouse_press_x_ = mouse_x_;
+            mouse_press_y_ = mouse_y_;
+            mouse_dx_ = 0;
+            mouse_dy_ = 0;
+        }
+        if (e.type == ButtonRelease) {
+            mouse_down_ = false;
+            mouse_released_ = true;
+        }
+        if (e.type == MotionNotify) {
+            if (mouse_down_) {
+                mouse_dx_ += e.xmotion.x - mouse_x_;
+                mouse_dy_ += e.xmotion.y - mouse_y_;
+            }
+            mouse_x_ = e.xmotion.x;
+            mouse_y_ = e.xmotion.y;
         }
         if (e.type == DestroyNotify) { closed_ = true; }
         if (e.type == ClientMessage) {

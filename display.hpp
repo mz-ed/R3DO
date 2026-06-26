@@ -16,7 +16,10 @@ class DisplayWin {
     unsigned int* data_;
     int last_keysym_;
     int mouse_x_, mouse_y_;
+    int mouse_dx_, mouse_dy_;
+    int mouse_press_x_, mouse_press_y_;
     bool mouse_clicked_;
+    bool mouse_down_, mouse_released_;
     XFontStruct* font_;
     unsigned long white_pixel_, black_pixel_;
 
@@ -31,8 +34,16 @@ public:
     void clear_key() { last_keysym_ = 0; }
     int mouse_x() const { return mouse_x_; }
     int mouse_y() const { return mouse_y_; }
+    int mouse_dx() const { return mouse_dx_; }
+    int mouse_dy() const { return mouse_dy_; }
+    int mouse_press_x() const { return mouse_press_x_; }
+    int mouse_press_y() const { return mouse_press_y_; }
     bool mouse_clicked() const { return mouse_clicked_; }
+    bool is_mouse_down() const { return mouse_down_; }
+    bool mouse_released() const { return mouse_released_; }
     void clear_mouse() { mouse_clicked_ = false; }
+    void clear_mouse_delta() { mouse_dx_ = 0; mouse_dy_ = 0; }
+    void clear_mouse_released() { mouse_released_ = false; }
 
     void set_pixel(int x, int y, unsigned char r, unsigned char g, unsigned char b);
     void update();

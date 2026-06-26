@@ -257,23 +257,46 @@ int main() {
             int mx = display.mouse_x();
             int my = display.mouse_y();
             display.clear_mouse();
-            if (mx < 630) {
-                HitRecord rec;
-                if (hit_center(grid, cam, image_width, image_height, rec)) {
-                    int i, j, k;
-                    if (grid.world_to_cell(rec.p, i, j, k) && grid.get(i, j, k)) {
-                        grid.set(i, j, k, nullptr);
-                        save_scene(grid, SAVE_PATH);
-                        render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
-                        ui.draw();
-                        display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
-                    }
-                }
-            } else if (ui.handle_click(mx, my)) {
+            if (mx >= 630 && ui.handle_click(mx, my)) {
                 save_scene(grid, SAVE_PATH);
                 render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
                 ui.draw();
                 display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+            }
+        }
+
+        if (display.is_mouse_down() && display.mouse_press_x() < 630) {
+            int dx = display.mouse_dx();
+            int dy = display.mouse_dy();
+            if (dx != 0 || dy != 0) {
+                display.clear_mouse_delta();
+                double sens = 0.005;
+                cam.rotate(-dx * sens, dy * sens);
+                render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
+                ui.draw();
+                display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+            }
+        }
+
+        if (display.mouse_released()) {
+            display.clear_mouse_released();
+            if (display.mouse_press_x() < 630) {
+                int dx = display.mouse_x() - display.mouse_press_x();
+                int dy = display.mouse_y() - display.mouse_press_y();
+                int dist = (int)std::sqrt((double)(dx*dx + dy*dy));
+                if (dist < 5) {
+                    HitRecord rec;
+                    if (hit_center(grid, cam, image_width, image_height, rec)) {
+                        int i, j, k;
+                        if (grid.world_to_cell(rec.p, i, j, k) && grid.get(i, j, k)) {
+                            grid.set(i, j, k, nullptr);
+                            save_scene(grid, SAVE_PATH);
+                            render_scene(grid, cam, display, image_width, image_height, lq_samples, light_dir);
+                            ui.draw();
+                            display.draw_crosshair(image_width/2, image_height/2, 8, 0x00ff00);
+                        }
+                    }
+                }
             }
         }
 
