@@ -24,6 +24,8 @@ class UI {
     bool try_place(bool is_sphere);
     void clear_grid();
     int count_objects() const;
+    char save_msg_[64];
+    int save_msg_timer_;
 
 public:
     UI(Grid& grid, Camera& cam, DisplayWin& display);

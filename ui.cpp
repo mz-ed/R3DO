@@ -1,10 +1,15 @@
 #include "ui.hpp"
+#include "saver.hpp"
 #include "sphere.hpp"
 #include "box.hpp"
 #include <cstdio>
+#include <cstring>
 
 UI::UI(Grid& grid, Camera& cam, DisplayWin& display)
-    : grid(grid), cam(cam), display(display), palette_idx_(0) {}
+    : grid(grid), cam(cam), display(display), palette_idx_(0) {
+    save_msg_[0] = 0;
+    save_msg_timer_ = 0;
+}
 
 Vec3 UI::palette_color(int index) const {
     Vec3 palette[] = {
@@ -70,6 +75,7 @@ void UI::draw() {
         {MENU_X + 10, 45, 150, 28, "Add Sphere"},
         {MENU_X + 10, 80, 150, 28, "Add Box"},
         {MENU_X + 10, 115, 150, 28, "Clear All"},
+        {MENU_X + 10, 150, 150, 28, "Save"},
     };
 
     for (auto& btn : buttons) {
@@ -80,17 +86,22 @@ void UI::draw() {
 
     char buf[64];
     snprintf(buf, sizeof(buf), "Objects: %d", count_objects());
-    display.draw_text(MENU_X + 10, 170, buf, 0xaaaaaa);
+    display.draw_text(MENU_X + 10, 200, buf, 0xaaaaaa);
 
     snprintf(buf, sizeof(buf), "Cam: %.1f %.1f %.1f", cam.pos.x, cam.pos.y, cam.pos.z);
-    display.draw_text(MENU_X + 10, 190, buf, 0x666688);
+    display.draw_text(MENU_X + 10, 220, buf, 0x666688);
 
-    display.draw_text(MENU_X + 10, 220, "Controls:", 0x888888);
-    display.draw_text(MENU_X + 10, 237, "WASD move", 0x666688);
-    display.draw_text(MENU_X + 10, 252, "Arrows look", 0x666688);
-    display.draw_text(MENU_X + 10, 267, "Q/E up/down", 0x666688);
-    display.draw_text(MENU_X + 10, 282, "Space: HQ", 0x666688);
-    display.draw_text(MENU_X + 10, 297, "Esc: quit", 0x666688);
+    if (save_msg_timer_ > 0) {
+        save_msg_timer_--;
+        display.draw_text(MENU_X + 10, 245, save_msg_, 0x55ff55);
+    }
+
+    display.draw_text(MENU_X + 10, 270, "Controls:", 0x888888);
+    display.draw_text(MENU_X + 10, 287, "WASD move", 0x666688);
+    display.draw_text(MENU_X + 10, 302, "Arrows look", 0x666688);
+    display.draw_text(MENU_X + 10, 317, "Q/E up/down", 0x666688);
+    display.draw_text(MENU_X + 10, 332, "Space: HQ", 0x666688);
+    display.draw_text(MENU_X + 10, 347, "Esc: quit", 0x666688);
 }
 
 bool UI::handle_click(int mx, int my) {
@@ -109,6 +120,20 @@ bool UI::handle_click(int mx, int my) {
         std::cerr << "Button: Clear All" << std::endl;
         clear_grid();
         return true;
+    } else if (my >= 150 && my < 150 + 28) {
+        std::cout << "\nSave name: " << std::flush;
+        char name[256];
+        if (fgets(name, sizeof(name), stdin)) {
+            name[strcspn(name, "\n")] = 0;
+            if (name[0]) {
+                std::string path = "saves/" + std::string(name) + ".r3do";
+                save_scene(grid, path);
+                int n = snprintf(save_msg_, sizeof(save_msg_), "Saved: %s", name);
+                save_msg_timer_ = 60;
+                std::cout << "  -> " << path << std::endl;
+            }
+        }
+        return false;
     }
     std::cerr << "Menu click at y=" << my << " (no button)" << std::endl;
     return false;

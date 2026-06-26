@@ -34,7 +34,9 @@ A green `+` at screen center lets you target objects. Click anywhere in the 3D v
 
 All scene changes are automatically saved to `saves/default.r3do` as a plain-text file. The save is written after every add, remove, or clear operation. On startup, the last saved state is loaded — any changes you make persist across sessions.
 
-To reset to the default scene, delete `saves/default.r3do` and restart.
+To manually name and store a scene, click **Save** in the menu panel, then type a name in the terminal. The file is written to `saves/<name>.r3do` and can be loaded later.
+
+To reset to the default scene, delete the save files in the `saves/` directory and restart.
 
 ## Build
 
