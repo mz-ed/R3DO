@@ -8,6 +8,7 @@
 #include "saver.hpp"
 #include "render.hpp"
 #include "startscreen.hpp"
+#include "settings.hpp"
 #include <iostream>
 #include <cmath>
 #include <unistd.h>
@@ -20,14 +21,15 @@ int main() {
     int lq_samples = 1;
     Vec3 light_dir(1, 2, 1);
 
-    DisplayWin display(800, 600, "R3DO - 3D Space");
-    display.toggle_fullscreen();
+    Settings settings = load_settings();
+
+    DisplayWin display(settings.res.w, settings.res.h, "R3DO - 3D Space");
     const char* SAVE_PATH = "saves/default.r3do";
 
     Grid grid(nx, ny, nz, cell_size, grid_center);
 
     while (true) {
-        StartAction action = show_start_screen(display);
+        StartAction action = show_start_screen(display, settings);
         if (action == StartAction::QUIT) return 0;
 
         if (action == StartAction::NEW_SCENE) break;

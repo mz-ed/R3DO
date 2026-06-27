@@ -17,7 +17,7 @@ A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 gr
 | **Left Click (scene)** | Remove object under crosshair |
 | **Left Drag (scene)** | Look around (mouse look) |
 
-The program starts fullscreen at your display's native resolution. Press F11 to switch back to 800×600 windowed mode.
+The program starts at the resolution saved in `settings.cfg` (or 1920×1080 by default). Press F11 to toggle fullscreen. Use the **Settings** button on the start screen to change the resolution.
 
 ## Interactive Menu
 
@@ -49,7 +49,7 @@ To manually snapshot a scene, click **Save** in the side panel and type a name i
 Requires libx11-dev.
 
 ```sh
-g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp render.cpp startscreen.cpp -lX11 -o renderer
+g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp render.cpp startscreen.cpp settings.cpp -lX11 -o renderer
 ./renderer
 ```
 
@@ -66,7 +66,8 @@ g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp render.cpp startscreen.
 |------|------|
 | `main.cpp` | Entry point, game loop, event handling |
 | `render.hpp` / `render.cpp` | Ray tracing (ray_color, render_scene, hit_center) |
-| `startscreen.hpp` / `startscreen.cpp` | Start screen, load screen, save listing |
+| `startscreen.hpp` / `startscreen.cpp` | Start screen, load screen, save listing, settings screen |
+| `settings.hpp` / `settings.cpp` | Resolution settings, load/save from `settings.cfg` |
 | `camera.hpp` | Camera with WASD movement and yaw/pitch rotation |
 | `display.hpp` / `display.cpp` | X11 window wrapper (keyboard, mouse, pixels, text) |
 | `v3.hpp` | 3D vector math (Vec3, operators, cross, dot, unit) |
