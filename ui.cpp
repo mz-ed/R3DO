@@ -11,6 +11,10 @@ UI::UI(Grid& grid, Camera& cam, DisplayWin& display)
     : grid(grid), cam(cam), display(display), palette_idx_(0) {
     save_msg_[0] = 0;
     save_msg_timer_ = 0;
+    save_dialog_active_ = false;
+    save_name_[0] = 0;
+    save_name_len_ = 0;
+    cursor_counter_ = 0;
 }
 
 Vec3 UI::palette_color(int index) const {
@@ -119,9 +123,28 @@ void UI::draw() {
     display.draw_text((display.width() - MENU_W) + 10, 382, "Q/E up/down", 0x666688);
     display.draw_text((display.width() - MENU_W) + 10, 397, "Space: HQ", 0x666688);
     display.draw_text((display.width() - MENU_W) + 10, 412, "Esc: quit", 0x666688);
+
+    if (save_dialog_active_) {
+        draw_save_dialog();
+        cursor_counter_++;
+    }
 }
 
 bool UI::handle_click(int mx, int my) {
+    if (save_dialog_active_) {
+        int dw = 360, dh = 180;
+        int dx = (display.width() - dw) / 2;
+        int dy = (display.height() - dh) / 2;
+        if (mx >= dx + 20 && mx < dx + 170 && my >= dy + 120 && my < dy + 150) {
+            confirm_save();
+        } else if (mx >= dx + 190 && mx < dx + 340 && my >= dy + 120 && my < dy + 150) {
+            cancel_save();
+        } else {
+            cancel_save();
+        }
+        return true;
+    }
+
     if (mx < (display.width() - MENU_W) || mx >= (display.width() - MENU_W) + MENU_W)
         return false;
 
@@ -139,20 +162,75 @@ bool UI::handle_click(int mx, int my) {
         clear_grid();
         return true;
     } else if (my >= 220 && my < 220 + 28) {
-        std::cout << "\nSave name: " << std::flush;
-        char name[256];
-        if (fgets(name, sizeof(name), stdin)) {
-            name[strcspn(name, "\n")] = 0;
-            if (name[0]) {
-                std::string path = "saves/" + std::string(name) + ".r3do";
-                save_scene(grid, path);
-                int n = snprintf(save_msg_, sizeof(save_msg_), "Saved: %s", name);
-                save_msg_timer_ = 60;
-                std::cout << "  -> " << path << std::endl;
-            }
-        }
-        return false;
+        open_save_dialog();
+        return true;
     }
     std::cerr << "Menu click at y=" << my << " (no button)" << std::endl;
     return false;
+}
+
+void UI::open_save_dialog() {
+    save_dialog_active_ = true;
+    save_name_[0] = 0;
+    save_name_len_ = 0;
+    cursor_counter_ = 0;
+}
+
+void UI::cancel_save() {
+    save_dialog_active_ = false;
+}
+
+void UI::confirm_save() {
+    if (save_name_len_ > 0) {
+        std::string path = "saves/" + std::string(save_name_) + ".r3do";
+        save_scene(grid, path);
+        snprintf(save_msg_, sizeof(save_msg_), "Saved: %s", save_name_);
+        save_msg_timer_ = 60;
+        std::cout << "  -> " << path << std::endl;
+    }
+    save_dialog_active_ = false;
+}
+
+void UI::handle_save_dialog_key(int keysym, char c) {
+    if (!save_dialog_active_) return;
+    if (keysym == XK_Escape) {
+        cancel_save();
+    } else if (keysym == XK_Return || keysym == XK_KP_Enter) {
+        confirm_save();
+    } else if (keysym == XK_BackSpace) {
+        if (save_name_len_ > 0) {
+            save_name_[--save_name_len_] = 0;
+        }
+    } else if (c >= 32 && c <= 126 && save_name_len_ < 255) {
+        save_name_[save_name_len_++] = c;
+        save_name_[save_name_len_] = 0;
+    }
+}
+
+void UI::draw_save_dialog() {
+    int w = display.width(), h = display.height();
+    int dw = 360, dh = 180;
+    int dx = (w - dw) / 2, dy = (h - dh) / 2;
+
+    display.fill_rect(0, 0, w, h, 0x111122);
+    display.fill_rect(dx, dy, dw, dh, 0x222244);
+    display.fill_rect(dx + 1, dy + 1, dw - 2, dh - 2, 0x2a2a50);
+    display.draw_text(dx + 20, dy + 28, "Save Scene", 0xffffff);
+    display.fill_rect(dx + 20, dy + 34, 60, 1, 0x666688);
+
+    display.fill_rect(dx + 20, dy + 55, dw - 40, 36, 0x111122);
+    display.fill_rect(dx + 21, dy + 56, dw - 42, 34, 0x1a1a33);
+
+    char display_name[256];
+    snprintf(display_name, sizeof(display_name), "%s%s",
+             save_name_, (cursor_counter_ / 20) % 2 ? " " : "_");
+    display.draw_text(dx + 28, dy + 78, display_name, 0xccccff);
+
+    display.fill_rect(dx + 20, dy + 120, 150, 28, 0x336633);
+    display.fill_rect(dx + 21, dy + 121, 148, 26, 0x3d7a3d);
+    display.draw_text(dx + 65, dy + 139, "Save", 0xffffff);
+
+    display.fill_rect(dx + 190, dy + 120, 150, 28, 0x663333);
+    display.fill_rect(dx + 191, dy + 121, 148, 26, 0x7a3d3d);
+    display.draw_text(dx + 228, dy + 139, "Cancel", 0xffffff);
 }

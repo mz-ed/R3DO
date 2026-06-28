@@ -5,7 +5,7 @@
 
 DisplayWin::DisplayWin(int width, int height, const char* title)
     : width_(width), height_(height), closed_(false), fullscreen_(false), data_(nullptr),
-      last_keysym_(0), mouse_x_(0), mouse_y_(0),
+      last_keysym_(0), last_char_(0), mouse_x_(0), mouse_y_(0),
       mouse_dx_(0), mouse_dy_(0), mouse_press_x_(0), mouse_press_y_(0),
       mouse_clicked_(false), mouse_down_(false), mouse_released_(false) {
     d = XOpenDisplay(nullptr);
@@ -74,6 +74,7 @@ void DisplayWin::process_events() {
             char buf[32];
             XLookupString(&e.xkey, buf, sizeof(buf), &keysym, nullptr);
             last_keysym_ = (int)keysym;
+            if (buf[0]) last_char_ = buf[0];
         }
         if (e.type == ButtonPress) {
             mouse_x_ = e.xbutton.x;

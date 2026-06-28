@@ -54,11 +54,25 @@ int main() {
         display.process_events();
         if (display.is_closed()) break;
 
+        if (ui.is_save_dialog_active()) {
+            int key = display.get_key();
+            char c = display.get_char();
+            display.clear_key();
+            ui.handle_save_dialog_key(key, c);
+            ui.draw();
+            display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+        }
+
         if (display.mouse_clicked()) {
             int mx = display.mouse_x();
             int my = display.mouse_y();
             display.clear_mouse();
-            if (mx >= display.width() - 170 && ui.handle_click(mx, my)) {
+            if (ui.is_save_dialog_active()) {
+                ui.handle_click(mx, my);
+                display.clear_mouse_released();
+                ui.draw();
+                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+            } else if (mx >= display.width() - 170 && ui.handle_click(mx, my)) {
                 save_scene(grid, SAVE_PATH);
                 render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
                 ui.draw();
@@ -81,7 +95,9 @@ int main() {
 
         if (display.mouse_released()) {
             display.clear_mouse_released();
-            if (display.mouse_press_x() < display.width() - 170) {
+            if (ui.is_save_dialog_active()) {
+                // ignore
+            } else if (display.mouse_press_x() < display.width() - 170) {
                 int dx = display.mouse_x() - display.mouse_press_x();
                 int dy = display.mouse_y() - display.mouse_press_y();
                 int dist = (int)std::sqrt((double)(dx*dx + dy*dy));

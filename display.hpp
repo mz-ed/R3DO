@@ -15,6 +15,7 @@ class DisplayWin {
     bool closed_, fullscreen_;
     unsigned int* data_;
     int last_keysym_;
+    char last_char_;
     int mouse_x_, mouse_y_;
     int mouse_dx_, mouse_dy_;
     int mouse_press_x_, mouse_press_y_;
@@ -31,7 +32,9 @@ public:
     int height() const { return height_; }
     bool is_closed() const { return closed_; }
     int get_key() const { return last_keysym_; }
-    void clear_key() { last_keysym_ = 0; }
+    void clear_key() { last_keysym_ = 0; last_char_ = 0; }
+    char get_char() const { return last_char_; }
+    void clear_char() { last_char_ = 0; }
     int mouse_x() const { return mouse_x_; }
     int mouse_y() const { return mouse_y_; }
     int mouse_dx() const { return mouse_dx_; }
