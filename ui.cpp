@@ -2,6 +2,8 @@
 #include "saver.hpp"
 #include "sphere.hpp"
 #include "box.hpp"
+#include "cylinder.hpp"
+#include "cone.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -21,7 +23,7 @@ Vec3 UI::palette_color(int index) const {
     return palette[index % 10];
 }
 
-bool UI::try_place(bool is_sphere) {
+bool UI::try_place(ShapeType type) {
     Vec3 target = cam.pos + cam.forward() * 3.0;
     int i, j, k;
     if (!grid.world_to_cell(target, i, j, k)) {
@@ -35,14 +37,27 @@ bool UI::try_place(bool is_sphere) {
 
     double cs = grid.cell_size;
     Vec3 c = grid.cell_center(i, j, k);
-    if (is_sphere) {
-        grid.set(i, j, k, new Sphere(c, cs * 0.45, palette_color(palette_idx_)));
-        std::cerr << "Sphere at cell (" << i << "," << j << "," << k << ") pos ("
-                  << c.x << "," << c.y << "," << c.z << ")" << std::endl;
-    } else {
-        Vec3 half(cs * 0.38, cs * 0.38, cs * 0.38);
-        grid.set(i, j, k, new Box(c - half, c + half, palette_color(palette_idx_)));
-        std::cerr << "Box at cell (" << i << "," << j << "," << k << ")" << std::endl;
+    Vec3 col = palette_color(palette_idx_);
+
+    switch (type) {
+        case ShapeType::SPHERE:
+            grid.set(i, j, k, new Sphere(c, cs * 0.45, col));
+            std::cerr << "Sphere at cell (" << i << "," << j << "," << k << ")" << std::endl;
+            break;
+        case ShapeType::BOX: {
+            Vec3 half(cs * 0.38, cs * 0.38, cs * 0.38);
+            grid.set(i, j, k, new Box(c - half, c + half, col));
+            std::cerr << "Box at cell (" << i << "," << j << "," << k << ")" << std::endl;
+            break;
+        }
+        case ShapeType::CYLINDER:
+            grid.set(i, j, k, new Cylinder(c, cs * 0.38, cs * 0.8, col));
+            std::cerr << "Cylinder at cell (" << i << "," << j << "," << k << ")" << std::endl;
+            break;
+        case ShapeType::CONE:
+            grid.set(i, j, k, new Cone(c, cs * 0.38, cs * 0.8, col));
+            std::cerr << "Cone at cell (" << i << "," << j << "," << k << ")" << std::endl;
+            break;
     }
     palette_idx_++;
     return true;
@@ -74,8 +89,10 @@ void UI::draw() {
     Button buttons[] = {
         {(display.width() - MENU_W) + 10, 45, 150, 28, "Add Sphere"},
         {(display.width() - MENU_W) + 10, 80, 150, 28, "Add Box"},
-        {(display.width() - MENU_W) + 10, 115, 150, 28, "Clear All"},
-        {(display.width() - MENU_W) + 10, 150, 150, 28, "Save"},
+        {(display.width() - MENU_W) + 10, 115, 150, 28, "Add Cylinder"},
+        {(display.width() - MENU_W) + 10, 150, 150, 28, "Add Cone"},
+        {(display.width() - MENU_W) + 10, 185, 150, 28, "Clear All"},
+        {(display.width() - MENU_W) + 10, 220, 150, 28, "Save"},
     };
 
     for (auto& btn : buttons) {
@@ -86,22 +103,22 @@ void UI::draw() {
 
     char buf[64];
     snprintf(buf, sizeof(buf), "Objects: %d", count_objects());
-    display.draw_text((display.width() - MENU_W) + 10, 200, buf, 0xaaaaaa);
+    display.draw_text((display.width() - MENU_W) + 10, 265, buf, 0xaaaaaa);
 
     snprintf(buf, sizeof(buf), "Cam: %.1f %.1f %.1f", cam.pos.x, cam.pos.y, cam.pos.z);
-    display.draw_text((display.width() - MENU_W) + 10, 220, buf, 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 285, buf, 0x666688);
 
     if (save_msg_timer_ > 0) {
         save_msg_timer_--;
-        display.draw_text((display.width() - MENU_W) + 10, 245, save_msg_, 0x55ff55);
+        display.draw_text((display.width() - MENU_W) + 10, 310, save_msg_, 0x55ff55);
     }
 
-    display.draw_text((display.width() - MENU_W) + 10, 270, "Controls:", 0x888888);
-    display.draw_text((display.width() - MENU_W) + 10, 287, "WASD move", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 302, "Arrows look", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 317, "Q/E up/down", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 332, "Space: HQ", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 347, "Esc: quit", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 335, "Controls:", 0x888888);
+    display.draw_text((display.width() - MENU_W) + 10, 352, "WASD move", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 367, "Arrows look", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 382, "Q/E up/down", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 397, "Space: HQ", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 412, "Esc: quit", 0x666688);
 }
 
 bool UI::handle_click(int mx, int my) {
@@ -110,17 +127,18 @@ bool UI::handle_click(int mx, int my) {
 
     std::cerr << "CLICK at (" << mx << "," << my << ")" << std::endl;
 
-    if (my >= 45 && my < 45 + 28) {
-        std::cerr << "Button: Add Sphere" << std::endl;
-        return try_place(true);
-    } else if (my >= 80 && my < 80 + 28) {
-        std::cerr << "Button: Add Box" << std::endl;
-        return try_place(false);
-    } else if (my >= 115 && my < 115 + 28) {
-        std::cerr << "Button: Clear All" << std::endl;
+    if (my >= 45 && my < 45 + 28)
+        return try_place(ShapeType::SPHERE);
+    else if (my >= 80 && my < 80 + 28)
+        return try_place(ShapeType::BOX);
+    else if (my >= 115 && my < 115 + 28)
+        return try_place(ShapeType::CYLINDER);
+    else if (my >= 150 && my < 150 + 28)
+        return try_place(ShapeType::CONE);
+    else if (my >= 185 && my < 185 + 28) {
         clear_grid();
         return true;
-    } else if (my >= 150 && my < 150 + 28) {
+    } else if (my >= 220 && my < 220 + 28) {
         std::cout << "\nSave name: " << std::flush;
         char name[256];
         if (fgets(name, sizeof(name), stdin)) {

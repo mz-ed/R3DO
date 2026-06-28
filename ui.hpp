@@ -6,6 +6,8 @@
 #include "camera.hpp"
 #include "display.hpp"
 
+enum class ShapeType { SPHERE, BOX, CYLINDER, CONE };
+
 class UI {
     Grid& grid;
     Camera& cam;
@@ -20,7 +22,7 @@ class UI {
     };
 
     Vec3 palette_color(int index) const;
-    bool try_place(bool is_sphere);
+    bool try_place(ShapeType type);
     void clear_grid();
     int count_objects() const;
     char save_msg_[64];

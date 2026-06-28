@@ -1,6 +1,8 @@
 #include "saver.hpp"
 #include "sphere.hpp"
 #include "box.hpp"
+#include "cylinder.hpp"
+#include "cone.hpp"
 #include <cstdio>
 #include <cstring>
 #include <sys/stat.h>
@@ -50,6 +52,10 @@ void load_scene(const std::string& filename, Grid& grid) {
         } else if (strcmp(type, "box") == 0) {
             Vec3 half(cs * 0.38, cs * 0.38, cs * 0.38);
             grid.set(i, j, k, new Box(c - half, c + half, color));
+        } else if (strcmp(type, "cylinder") == 0) {
+            grid.set(i, j, k, new Cylinder(c, cs * 0.38, cs * 0.8, color));
+        } else if (strcmp(type, "cone") == 0) {
+            grid.set(i, j, k, new Cone(c, cs * 0.38, cs * 0.8, color));
         }
     }
 

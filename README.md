@@ -23,8 +23,7 @@ The program starts at the resolution saved in `settings.cfg` (or 1920×1080 by d
 
 A side panel on the right provides:
 
-- **Add Sphere** — places a sphere 3 units ahead in the first empty grid cell
-- **Add Box** — places an axis-aligned box at the same location
+- **Add Sphere / Box / Cylinder / Cone** — places the chosen shape 3 units ahead in the first empty grid cell
 - **Clear All** — removes all objects from the grid
 - Object counter and camera position display
 
@@ -75,6 +74,8 @@ g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp render.cpp startscreen.
 | `hittable.hpp` | Abstract Hittable interface + HitRecord |
 | `sphere.hpp` | Sphere primitive (quadratic intersection) |
 | `box.hpp` | Axis-aligned box primitive (slab method) |
+| `cylinder.hpp` | Y-aligned capped cylinder |
+| `cone.hpp` | Y-aligned capped cone |
 | `grid.hpp` | 10×10×10 grid with DDA ray traversal |
 | `ui.hpp` / `ui.cpp` | Side-panel menu (add sphere/box, clear) |
 | `saver.hpp` / `saver.cpp` | Save/load scene to .r3do files |
