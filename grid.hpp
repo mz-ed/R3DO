@@ -135,10 +135,21 @@ public:
         for (int s = 0; s < max_steps; s++) {
             Hittable* obj = cells[idx(cell_idx[0], cell_idx[1], cell_idx[2])];
             if (obj) {
-                if (obj->hit(r, t_min, closest, temp_rec)) {
-                    hit_anything = true;
-                    closest = temp_rec.t;
-                    rec = temp_rec;
+                if (obj->is_visible()) {
+                    if (obj->hit(r, t_min, closest, temp_rec)) {
+                        hit_anything = true;
+                        closest = temp_rec.t;
+                        rec = temp_rec;
+                    }
+                } else {
+                    Vec3 cmin, cmax;
+                    cell_bounds(cell_idx[0], cell_idx[1], cell_idx[2], cmin, cmax);
+                    Box cell_box(cmin, cmax, faint);
+                    if (cell_box.hit(r, t_min, closest, temp_rec)) {
+                        hit_anything = true;
+                        closest = temp_rec.t;
+                        rec = temp_rec;
+                    }
                 }
             } else {
                 Vec3 cmin, cmax;

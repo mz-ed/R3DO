@@ -20,8 +20,8 @@ void save_scene(const Grid& grid, const std::string& filename) {
                 if (!obj) continue;
 
                 Vec3 c = obj->get_color();
-                fprintf(f, "%s %d %d %d %.3f %.3f %.3f\n",
-                        obj->type_name(), i, j, k, c.x, c.y, c.z);
+                fprintf(f, "%s %d %d %d %.3f %.3f %.3f %d\n",
+                        obj->type_name(), i, j, k, c.x, c.y, c.z, obj->is_visible() ? 1 : 0);
             }
         }
     }
@@ -39,23 +39,31 @@ void load_scene(const std::string& filename, Grid& grid) {
                 grid.set(i, j, k, nullptr);
 
     char type[16];
-    int i, j, k;
+    int i, j, k, v;
     float r, g, b;
 
-    while (fscanf(f, "%15s %d %d %d %f %f %f", type, &i, &j, &k, &r, &g, &b) == 7) {
+    while (true) {
+        int n = fscanf(f, "%15s %d %d %d %f %f %f %d", type, &i, &j, &k, &r, &g, &b, &v);
+        if (n == 7) v = 1;
+        else if (n < 7) break;
         Vec3 color(r, g, b);
         Vec3 c = grid.cell_center(i, j, k);
         double cs = grid.cell_size;
 
+        Hittable* obj = nullptr;
         if (strcmp(type, "sphere") == 0) {
-            grid.set(i, j, k, new Sphere(c, cs * 0.45, color));
+            obj = new Sphere(c, cs * 0.45, color);
         } else if (strcmp(type, "box") == 0) {
             Vec3 half(cs * 0.38, cs * 0.38, cs * 0.38);
-            grid.set(i, j, k, new Box(c - half, c + half, color));
+            obj = new Box(c - half, c + half, color);
         } else if (strcmp(type, "cylinder") == 0) {
-            grid.set(i, j, k, new Cylinder(c, cs * 0.38, cs * 0.8, color));
+            obj = new Cylinder(c, cs * 0.38, cs * 0.8, color);
         } else if (strcmp(type, "cone") == 0) {
-            grid.set(i, j, k, new Cone(c, cs * 0.38, cs * 0.8, color));
+            obj = new Cone(c, cs * 0.38, cs * 0.8, color);
+        }
+        if (obj) {
+            obj->set_visible(v != 0);
+            grid.set(i, j, k, obj);
         }
     }
 
