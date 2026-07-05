@@ -10,6 +10,7 @@
 #include "startscreen.hpp"
 #include "settings.hpp"
 #include "billboard.hpp"
+#include "overhead.hpp"
 #include <iostream>
 #include <cmath>
 #include <unistd.h>
@@ -43,14 +44,18 @@ int main() {
 
     Camera cam(Vec3(3.0, 1.5, 4.0), 0, -0.15);
     UI ui(grid, cam, display);
-    bool use_billboard = true;
-    ui.set_mode_label("Mode: Billboard");
+    int render_mode = 1; // 0=raytrace 1=billboard 2=overhead
+    const char* mode_names[] = {"Raytrace", "Billboard", "Overhead"};
+    auto render_auto = [&]() { ui.set_mode_label(mode_names[render_mode]); };
+    render_auto();
 
     auto render = [&](int samples) {
-        if (use_billboard)
+        if (render_mode == 0)
+            render_scene(grid, cam, display, display.width(), display.height(), samples, light_dir);
+        else if (render_mode == 1)
             render_billboard(grid, cam, display, light_dir);
         else
-            render_scene(grid, cam, display, display.width(), display.height(), samples, light_dir);
+            render_overhead(grid, cam, display);
     };
 
     std::cout << "Initial render..." << std::endl;
@@ -161,8 +166,8 @@ int main() {
                 case XK_Escape: running = false; break;
                 case XK_b:
                 case XK_B:
-                    use_billboard = !use_billboard;
-                    ui.set_mode_label(use_billboard ? "Mode: Billboard" : "Mode: Raytrace");
+                    render_mode = (render_mode + 1) % 3;
+                    render_auto();
                     render(lq_samples);
                     ui.draw();
                     display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
