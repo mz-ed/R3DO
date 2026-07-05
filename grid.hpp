@@ -12,33 +12,60 @@ public:
     double cell_size;
     Vec3 origin;
     std::vector<Hittable*> cells;
+    int visible_count_ = 0;
+
+    static const int CHUNK_BITS = 2;
+    static const int CHUNK_SIZE = 1 << CHUNK_BITS;
+    int cnx, cny, cnz;
+    std::vector<char> chunk_vis_;
 
     Grid(int nx, int ny, int nz, double cell_size, const Vec3& origin)
         : nx(nx), ny(ny), nz(nz), cell_size(cell_size), origin(origin) {
         cells.resize(nx * ny * nz, nullptr);
+        cnx = (nx + CHUNK_SIZE - 1) >> CHUNK_BITS;
+        cny = (ny + CHUNK_SIZE - 1) >> CHUNK_BITS;
+        cnz = (nz + CHUNK_SIZE - 1) >> CHUNK_BITS;
+        chunk_vis_.resize(cnx * cny * cnz, 0);
     }
 
     ~Grid() {
-        for (auto* c : cells) {
-            delete c;
-        }
+        for (auto* c : cells) delete c;
     }
 
     int idx(int i, int j, int k) const {
         return i + j * nx + k * nx * ny;
     }
 
+    int chunk_flat(int ci, int cj, int ck) const {
+        return ci + cj * cnx + ck * cnx * cny;
+    }
+
     void set(int i, int j, int k, Hittable* obj) {
         if (i >= 0 && i < nx && j >= 0 && j < ny && k >= 0 && k < nz) {
-            delete cells[idx(i, j, k)];
+            Hittable* old = cells[idx(i, j, k)];
+            if (old && old->is_visible()) visible_count_--;
+            if (obj && obj->is_visible()) visible_count_++;
+            delete old;
             cells[idx(i, j, k)] = obj;
+            int ci = i >> CHUNK_BITS, cj = j >> CHUNK_BITS, ck = k >> CHUNK_BITS;
+            int cf = chunk_flat(ci, cj, ck);
+            chunk_vis_[cf] = 0;
+            int si = ci << CHUNK_BITS, ei = std::min(si + CHUNK_SIZE, nx);
+            int sj = cj << CHUNK_BITS, ej = std::min(sj + CHUNK_SIZE, ny);
+            int sk = ck << CHUNK_BITS, ek = std::min(sk + CHUNK_SIZE, nz);
+            for (int kk = sk; kk < ek; kk++)
+                for (int jj = sj; jj < ej; jj++)
+                    for (int ii = si; ii < ei; ii++) {
+                        Hittable* o = cells[idx(ii, jj, kk)];
+                        if (o && o->is_visible()) { chunk_vis_[cf] = 1; goto done; }
+                    }
+            done:;
         }
     }
 
     Hittable* get(int i, int j, int k) const {
-        if (i >= 0 && i < nx && j >= 0 && j < ny && k >= 0 && k < nz) {
+        if (i >= 0 && i < nx && j >= 0 && j < ny && k >= 0 && k < nz)
             return cells[idx(i, j, k)];
-        }
         return nullptr;
     }
 
@@ -71,7 +98,10 @@ public:
         return i >= 0 && i < nx && j >= 0 && j < ny && k >= 0 && k < nz;
     }
 
+    bool has_visible() const { return visible_count_ > 0; }
+
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
+        if (visible_count_ == 0) return false;
         Vec3 gmin, gmax;
         grid_bounds(gmin, gmax);
 
@@ -107,6 +137,7 @@ public:
         double tMax[3], tDelta[3];
         int step[3];
         int cell_idx[3] = {i, j, k};
+        int chunk_idx[3] = {i >> CHUNK_BITS, j >> CHUNK_BITS, k >> CHUNK_BITS};
         int dim[3] = {nx, ny, nz};
 
         for (int a = 0; a < 3; a++) {
@@ -126,39 +157,51 @@ public:
             }
         }
 
-        Vec3 faint(0.25, 0.25, 0.35);
         HitRecord temp_rec;
-        bool hit_anything = false;
         double closest = t_exit;
         int max_steps = nx + ny + nz;
 
         for (int s = 0; s < max_steps; s++) {
-            Hittable* obj = cells[idx(cell_idx[0], cell_idx[1], cell_idx[2])];
-            if (obj) {
-                if (obj->is_visible()) {
-                    if (obj->hit(r, t_min, closest, temp_rec)) {
-                        hit_anything = true;
-                        closest = temp_rec.t;
-                        rec = temp_rec;
+            int cf = chunk_flat(chunk_idx[0], chunk_idx[1], chunk_idx[2]);
+
+            if (!chunk_vis_[cf]) {
+                int exit_axis = -1;
+                double exit_t = 1e30;
+                for (int a = 0; a < 3; a++) {
+                    if (step[a] == 0) continue;
+                    int bound, steps;
+                    if (step[a] > 0) {
+                        bound = ((chunk_idx[a] + 1) << CHUNK_BITS);
+                        if (bound >= dim[a]) continue;
+                        steps = bound - cell_idx[a];
+                    } else {
+                        bound = chunk_idx[a] << CHUNK_BITS;
+                        if (bound <= 0) continue;
+                        steps = cell_idx[a] - bound + 1;
                     }
-                } else {
-                    Vec3 cmin, cmax;
-                    cell_bounds(cell_idx[0], cell_idx[1], cell_idx[2], cmin, cmax);
-                    Box cell_box(cmin, cmax, faint);
-                    if (cell_box.hit(r, t_min, closest, temp_rec)) {
-                        hit_anything = true;
-                        closest = temp_rec.t;
-                        rec = temp_rec;
-                    }
+                    double ta = tMax[a] + (steps - 1) * tDelta[a];
+                    if (ta < exit_t) { exit_t = ta; exit_axis = a; }
                 }
-            } else {
-                Vec3 cmin, cmax;
-                cell_bounds(cell_idx[0], cell_idx[1], cell_idx[2], cmin, cmax);
-                Box cell_box(cmin, cmax, faint);
-                if (cell_box.hit(r, t_min, closest, temp_rec)) {
-                    hit_anything = true;
-                    closest = temp_rec.t;
+                if (exit_axis < 0) break;
+                int steps;
+                if (step[exit_axis] > 0) {
+                    steps = ((chunk_idx[exit_axis] + 1) << CHUNK_BITS) - cell_idx[exit_axis];
+                } else {
+                    steps = cell_idx[exit_axis] - (chunk_idx[exit_axis] << CHUNK_BITS) + 1;
+                }
+                cell_idx[exit_axis] += steps * step[exit_axis];
+                chunk_idx[exit_axis] += step[exit_axis];
+                if (cell_idx[exit_axis] < 0 || cell_idx[exit_axis] >= dim[exit_axis]) break;
+                if (chunk_idx[exit_axis] < 0 || chunk_idx[exit_axis] >= (dim[exit_axis] + CHUNK_SIZE - 1) >> CHUNK_BITS) break;
+                tMax[exit_axis] += steps * tDelta[exit_axis];
+                continue;
+            }
+
+            Hittable* obj = cells[idx(cell_idx[0], cell_idx[1], cell_idx[2])];
+            if (obj && obj->is_visible()) {
+                if (obj->hit(r, t_min, closest, temp_rec)) {
                     rec = temp_rec;
+                    return true;
                 }
             }
 
@@ -166,18 +209,17 @@ public:
             if (tMax[1] < tMax[0]) axis = 1;
             if (tMax[2] < tMax[axis]) axis = 2;
 
-            if (tMax[axis] > t_exit) {
-                break;
-            }
+            if (tMax[axis] > t_exit) break;
 
+            int prev_chunk = cell_idx[axis] >> CHUNK_BITS;
             cell_idx[axis] += step[axis];
-            if (cell_idx[axis] < 0 || cell_idx[axis] >= dim[axis]) {
-                break;
-            }
+            if (cell_idx[axis] < 0 || cell_idx[axis] >= dim[axis]) break;
+            int new_chunk = cell_idx[axis] >> CHUNK_BITS;
+            if (new_chunk != prev_chunk) chunk_idx[axis] = new_chunk;
             tMax[axis] += tDelta[axis];
         }
 
-        return hit_anything;
+        return false;
     }
 };
 

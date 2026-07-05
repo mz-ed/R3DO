@@ -36,6 +36,9 @@ class UI {
 public:
     UI(Grid& grid, Camera& cam, DisplayWin& display);
 
+    const char* mode_label_ = "Raytrace";
+
+    void set_mode_label(const char* s) { mode_label_ = s; }
     void draw();
     bool handle_click(int mx, int my);
     void draw_save_dialog();

@@ -123,6 +123,8 @@ void UI::draw() {
     display.draw_text((display.width() - MENU_W) + 10, 382, "Q/E up/down", 0x666688);
     display.draw_text((display.width() - MENU_W) + 10, 397, "Space: HQ", 0x666688);
     display.draw_text((display.width() - MENU_W) + 10, 412, "Esc: quit", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 432, "B: toggle mode", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 452, mode_label_, 0x55aaff);
 
     if (save_dialog_active_) {
         draw_save_dialog();

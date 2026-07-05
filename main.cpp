@@ -9,6 +9,7 @@
 #include "render.hpp"
 #include "startscreen.hpp"
 #include "settings.hpp"
+#include "billboard.hpp"
 #include <iostream>
 #include <cmath>
 #include <unistd.h>
@@ -42,9 +43,18 @@ int main() {
 
     Camera cam(Vec3(3.0, 1.5, 4.0), 0, -0.15);
     UI ui(grid, cam, display);
+    bool use_billboard = true;
+    ui.set_mode_label("Mode: Billboard");
+
+    auto render = [&](int samples) {
+        if (use_billboard)
+            render_billboard(grid, cam, display, light_dir);
+        else
+            render_scene(grid, cam, display, display.width(), display.height(), samples, light_dir);
+    };
 
     std::cout << "Initial render..." << std::endl;
-    render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
+    render(lq_samples);
     ui.draw();
     display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
 
@@ -74,7 +84,7 @@ int main() {
                 display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
             } else if (mx >= display.width() - 170 && ui.handle_click(mx, my)) {
                 save_scene(grid, SAVE_PATH);
-                render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
+                render(lq_samples);
                 ui.draw();
                 display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
             }
@@ -87,7 +97,7 @@ int main() {
                 display.clear_mouse_delta();
                 double sens = 0.005;
                 cam.rotate(-dx * sens, dy * sens);
-                render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
+                render(lq_samples);
                 ui.draw();
                 display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
             }
@@ -108,7 +118,7 @@ int main() {
                         if (grid.world_to_cell(rec.p, i, j, k) && grid.get(i, j, k)) {
                             grid.set(i, j, k, nullptr);
                             save_scene(grid, SAVE_PATH);
-                            render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
+                            render(lq_samples);
                             ui.draw();
                             display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
                         }
@@ -138,22 +148,30 @@ int main() {
                 case XK_Down: cam.rotate(0, -rot_speed); moved = true; break;
                 case XK_F11:
                     display.toggle_fullscreen();
-                    render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
+                    render(lq_samples);
                     ui.draw();
                     display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
                     break;
                 case XK_space:
                     std::cout << "Full quality..." << std::endl;
-                    render_scene(grid, cam, display, display.width(), display.height(), hq_samples, light_dir);
+                    render(hq_samples);
                     ui.draw();
                     display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
                     break;
                 case XK_Escape: running = false; break;
+                case XK_b:
+                case XK_B:
+                    use_billboard = !use_billboard;
+                    ui.set_mode_label(use_billboard ? "Mode: Billboard" : "Mode: Raytrace");
+                    render(lq_samples);
+                    ui.draw();
+                    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+                    break;
             }
 
             if (moved && running) {
                 std::cout << cam.pos.x << "," << cam.pos.y << "," << cam.pos.z << " " << std::flush;
-                render_scene(grid, cam, display, display.width(), display.height(), lq_samples, light_dir);
+                render(lq_samples);
                 ui.draw();
                 display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
                 std::cout << "done" << std::endl;
