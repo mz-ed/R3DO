@@ -4,6 +4,7 @@
 #include "box.hpp"
 #include "cylinder.hpp"
 #include "cone.hpp"
+#include "obj_loader.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -15,6 +16,7 @@ UI::UI(Grid& grid, Camera& cam, DisplayWin& display)
     save_name_[0] = 0;
     save_name_len_ = 0;
     cursor_counter_ = 0;
+    strcpy(mesh_path_, "models/default.obj");
 }
 
 Vec3 UI::palette_color(int index) const {
@@ -80,6 +82,17 @@ bool UI::try_place(ShapeType type) {
             grid.set(i, j, k, new Cone(c, cs * 0.38, cs * 0.8, col));
             std::cerr << "Cone at cell (" << i << "," << j << "," << k << ")" << std::endl;
             break;
+        case ShapeType::MESH: {
+            Mesh* m = load_obj(mesh_path_, col, c, cs * 0.4);
+            if (m) {
+                grid.set(i, j, k, m);
+                std::cerr << "Mesh at cell (" << i << "," << j << "," << k << ")" << std::endl;
+            } else {
+                std::cerr << "FAIL: could not load " << mesh_path_ << std::endl;
+                return false;
+            }
+            break;
+        }
     }
     palette_idx_++;
     return true;
@@ -113,8 +126,9 @@ void UI::draw() {
         {(display.width() - MENU_W) + 10, 80, 150, 28, "Add Box"},
         {(display.width() - MENU_W) + 10, 115, 150, 28, "Add Cylinder"},
         {(display.width() - MENU_W) + 10, 150, 150, 28, "Add Cone"},
-        {(display.width() - MENU_W) + 10, 185, 150, 28, "Clear All"},
-        {(display.width() - MENU_W) + 10, 220, 150, 28, "Save"},
+        {(display.width() - MENU_W) + 10, 185, 150, 28, "Add Mesh"},
+        {(display.width() - MENU_W) + 10, 220, 150, 28, "Clear All"},
+        {(display.width() - MENU_W) + 10, 255, 150, 28, "Save"},
     };
 
     for (auto& btn : buttons) {
@@ -183,10 +197,12 @@ bool UI::handle_click(int mx, int my) {
         return try_place(ShapeType::CYLINDER);
     else if (my >= 150 && my < 150 + 28)
         return try_place(ShapeType::CONE);
-    else if (my >= 185 && my < 185 + 28) {
+    else if (my >= 185 && my < 185 + 28)
+        return try_place(ShapeType::MESH);
+    else if (my >= 220 && my < 220 + 28) {
         clear_grid();
         return true;
-    } else if (my >= 220 && my < 220 + 28) {
+    } else if (my >= 255 && my < 255 + 28) {
         open_save_dialog();
         return true;
     } else if (my >= 432 && my < 432 + 28) {

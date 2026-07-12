@@ -7,7 +7,7 @@
 #include "display.hpp"
 #include <X11/keysym.h>
 
-enum class ShapeType { SPHERE, BOX, CYLINDER, CONE };
+enum class ShapeType { SPHERE, BOX, CYLINDER, CONE, MESH };
 
 class UI {
     Grid& grid;
@@ -32,6 +32,7 @@ class UI {
     int save_name_len_;
     bool save_dialog_active_;
     int cursor_counter_;
+    char mesh_path_[256];
 
 public:
     UI(Grid& grid, Camera& cam, DisplayWin& display);
