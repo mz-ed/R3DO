@@ -123,8 +123,9 @@ void UI::draw() {
     display.draw_text((display.width() - MENU_W) + 10, 382, "Q/E up/down", 0x666688);
     display.draw_text((display.width() - MENU_W) + 10, 397, "Space: HQ", 0x666688);
     display.draw_text((display.width() - MENU_W) + 10, 412, "Esc: quit", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 432, "B: toggle mode", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 452, mode_label_, 0x55aaff);
+    display.fill_rect((display.width() - MENU_W) + 10, 432, 150, 28, 0x333355);
+    display.fill_rect((display.width() - MENU_W) + 11, 433, 148, 26, 0x3d3d6b);
+    display.draw_text((display.width() - MENU_W) + 15, 451, mode_label_, 0x55aaff);
 
     if (save_dialog_active_) {
         draw_save_dialog();
@@ -166,6 +167,9 @@ bool UI::handle_click(int mx, int my) {
     } else if (my >= 220 && my < 220 + 28) {
         open_save_dialog();
         return true;
+    } else if (my >= 432 && my < 432 + 28) {
+        mode_clicked_ = true;
+        return false;
     }
     std::cerr << "Menu click at y=" << my << " (no button)" << std::endl;
     return false;

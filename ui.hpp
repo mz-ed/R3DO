@@ -36,11 +36,13 @@ class UI {
 public:
     UI(Grid& grid, Camera& cam, DisplayWin& display);
 
-    const char* mode_label_ = "Raytrace";
+    bool mode_clicked_ = false;
 
     void set_mode_label(const char* s) { mode_label_ = s; }
+    const char* mode_label_ = "Raytrace";
     void draw();
     bool handle_click(int mx, int my);
+    bool mode_was_clicked() { bool c = mode_clicked_; mode_clicked_ = false; return c; }
     void draw_save_dialog();
     bool is_save_dialog_active() const { return save_dialog_active_; }
     void handle_save_dialog_key(int keysym, char c);

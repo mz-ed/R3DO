@@ -93,6 +93,13 @@ int main() {
                 ui.draw();
                 display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
             }
+            if (ui.mode_was_clicked()) {
+                render_mode = (render_mode + 1) % 3;
+                render_auto();
+                render(lq_samples);
+                ui.draw();
+                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+            }
         }
 
         if (display.is_mouse_down() && display.mouse_press_x() < display.width() - 170) {
