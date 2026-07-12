@@ -1,7 +1,15 @@
 #include "obj_loader.hpp"
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 #include <cmath>
+
+static int parse_vert_idx(const char* tok) {
+    if (!tok || !*tok) return 0;
+    // token is "i", "i/j", "i//j", or "i/j/k"
+    return atoi(tok);
+}
 
 Mesh* load_obj(const char* filename, const Vec3& color,
                const Vec3& center, double scale) {
@@ -21,32 +29,32 @@ Mesh* load_obj(const char* filename, const Vec3& color,
             if (sscanf(line + 2, "%f %f %f", &x, &y, &z) == 3)
                 verts.push_back(Vec3(x * scale, y * scale, z * scale));
         } else if (line[0] == 'f' && (line[1] == ' ' || line[1] == '\t')) {
-            int i0, i1, i2;
-            int n = sscanf(line + 2, "%d %d %d", &i0, &i1, &i2);
-            if (n == 3) {
-                if (i0 > 0 && i0 <= (int)verts.size() &&
-                    i1 > 0 && i1 <= (int)verts.size() &&
-                    i2 > 0 && i2 <= (int)verts.size()) {
-                    Vec3 v0 = verts[i0 - 1] + center;
-                    Vec3 v1 = verts[i1 - 1] + center;
-                    Vec3 v2 = verts[i2 - 1] + center;
-                    tris.push_back({v0, v1, v2});
+            // Tokenize face line: skip "f", parse each vertex token
+            char* p = line + 2;
+            int idx[4], nidx = 0;
+            while (*p && nidx < 4) {
+                while (*p == ' ' || *p == '\t') p++;
+                if (!*p || *p == '\n') break;
+                int v = parse_vert_idx(p);
+                if (v > 0 && v <= (int)verts.size()) {
+                    idx[nidx++] = v;
                 }
-            } else {
-                // f i/j/k i/j/k i/j/k format
-                int t0, t1, t2;
-                n = sscanf(line + 2, "%d/%*d/%*d %d/%*d/%*d %d/%*d/%*d", &i0, &i1, &i2);
-                n = sscanf(line + 2, "%d/%*d %d/%*d %d/%*d", &i0, &i1, &i2);
-                if (n == 3) {
-                    if (i0 > 0 && i0 <= (int)verts.size() &&
-                        i1 > 0 && i1 <= (int)verts.size() &&
-                        i2 > 0 && i2 <= (int)verts.size()) {
-                        Vec3 v0 = verts[i0 - 1] + center;
-                        Vec3 v1 = verts[i1 - 1] + center;
-                        Vec3 v2 = verts[i2 - 1] + center;
-                        tris.push_back({v0, v1, v2});
-                    }
-                }
+                // skip to next whitespace
+                while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+            }
+            if (nidx == 3) {
+                Vec3 v0 = verts[idx[0] - 1] + center;
+                Vec3 v1 = verts[idx[1] - 1] + center;
+                Vec3 v2 = verts[idx[2] - 1] + center;
+                tris.push_back({v0, v1, v2});
+            } else if (nidx == 4) {
+                // Fan triangulate quad
+                Vec3 v0 = verts[idx[0] - 1] + center;
+                Vec3 v1 = verts[idx[1] - 1] + center;
+                Vec3 v2 = verts[idx[2] - 1] + center;
+                Vec3 v3 = verts[idx[3] - 1] + center;
+                tris.push_back({v0, v1, v2});
+                tris.push_back({v0, v2, v3});
             }
         }
     }
