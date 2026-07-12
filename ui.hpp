@@ -6,6 +6,8 @@
 #include "camera.hpp"
 #include "display.hpp"
 #include <X11/keysym.h>
+#include <string>
+#include <vector>
 
 enum class ShapeType { SPHERE, BOX, CYLINDER, CONE, MESH };
 
@@ -32,7 +34,10 @@ class UI {
     int save_name_len_;
     bool save_dialog_active_;
     int cursor_counter_;
-    char mesh_path_[256];
+    std::vector<std::string> mesh_files_;
+    int mesh_idx_ = 0;
+    void cycle_mesh(int dir);
+    void scan_meshes();
 
 public:
     UI(Grid& grid, Camera& cam, DisplayWin& display);

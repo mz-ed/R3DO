@@ -7,6 +7,9 @@
 #include "obj_loader.hpp"
 #include <cstdio>
 #include <cstring>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <algorithm>
 
 UI::UI(Grid& grid, Camera& cam, DisplayWin& display)
     : grid(grid), cam(cam), display(display), palette_idx_(0) {
@@ -16,7 +19,32 @@ UI::UI(Grid& grid, Camera& cam, DisplayWin& display)
     save_name_[0] = 0;
     save_name_len_ = 0;
     cursor_counter_ = 0;
-    strcpy(mesh_path_, "models/default.obj");
+    scan_meshes();
+}
+
+void UI::scan_meshes() {
+    mesh_files_.clear();
+    DIR* dir = opendir("models");
+    if (!dir) {
+        mkdir("models", 0755);
+        return;
+    }
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        const char* name = entry->d_name;
+        int len = (int)strlen(name);
+        if (len > 4 && strcmp(name + len - 4, ".obj") == 0) {
+            mesh_files_.push_back(std::string("models/") + name);
+        }
+    }
+    closedir(dir);
+    std::sort(mesh_files_.begin(), mesh_files_.end());
+    if (mesh_idx_ >= (int)mesh_files_.size()) mesh_idx_ = 0;
+}
+
+void UI::cycle_mesh(int dir) {
+    if (mesh_files_.empty()) return;
+    mesh_idx_ = (mesh_idx_ + dir + (int)mesh_files_.size()) % (int)mesh_files_.size();
 }
 
 Vec3 UI::palette_color(int index) const {
@@ -83,12 +111,17 @@ bool UI::try_place(ShapeType type) {
             std::cerr << "Cone at cell (" << i << "," << j << "," << k << ")" << std::endl;
             break;
         case ShapeType::MESH: {
-            Mesh* m = load_obj(mesh_path_, col, c, cs * 0.4);
+            if (mesh_files_.empty()) {
+                std::cerr << "FAIL: no .obj files in models/" << std::endl;
+                return false;
+            }
+            const std::string& path = mesh_files_[mesh_idx_];
+            Mesh* m = load_obj(path.c_str(), col, c, cs * 0.4);
             if (m) {
                 grid.set(i, j, k, m);
-                std::cerr << "Mesh at cell (" << i << "," << j << "," << k << ")" << std::endl;
+                std::cerr << "Mesh from " << path << " at cell (" << i << "," << j << "," << k << ")" << std::endl;
             } else {
-                std::cerr << "FAIL: could not load " << mesh_path_ << std::endl;
+                std::cerr << "FAIL: could not load " << path << std::endl;
                 return false;
             }
             break;
@@ -135,6 +168,29 @@ void UI::draw() {
         display.fill_rect(btn.x, btn.y, btn.w, btn.h, 0x333355);
         display.fill_rect(btn.x + 1, btn.y + 1, btn.w - 2, btn.h - 2, 0x3d3d6b);
         display.draw_text(btn.x + 10, btn.y + 19, btn.text, 0xccccff);
+    }
+
+    // Mesh file selector
+    if (!mesh_files_.empty()) {
+        int mx = (display.width() - MENU_W) + 10;
+        int my = 217;
+        const std::string& name = mesh_files_[mesh_idx_];
+        const char* shortname = name.c_str();
+        const char* slash = strrchr(shortname, '/');
+        if (slash) shortname = slash + 1;
+        // "<" button
+        display.fill_rect(mx, my, 20, 18, 0x333355);
+        display.fill_rect(mx + 1, my + 1, 18, 16, 0x3d3d6b);
+        display.draw_text(mx + 6, my + 14, "<", 0xccccff);
+        // filename
+        char label[128];
+        snprintf(label, sizeof(label), " [%zu/%zu] %s", mesh_idx_ + 1, mesh_files_.size(), shortname);
+        display.draw_text(mx + 24, my + 14, label, 0x88aaff);
+        // ">" button
+        int rx = mx + 150 - 20;
+        display.fill_rect(rx, my, 20, 18, 0x333355);
+        display.fill_rect(rx + 1, my + 1, 18, 16, 0x3d3d6b);
+        display.draw_text(rx + 6, my + 14, ">", 0xccccff);
     }
 
     char buf[64];
@@ -199,6 +255,16 @@ bool UI::handle_click(int mx, int my) {
         return try_place(ShapeType::CONE);
     else if (my >= 185 && my < 185 + 28)
         return try_place(ShapeType::MESH);
+    else if (!mesh_files_.empty() && my >= 217 && my < 217 + 18) {
+        int sidebar_x = display.width() - MENU_W;
+        if (mx >= sidebar_x + 10 && mx < sidebar_x + 30) {
+            cycle_mesh(-1);
+            return true;
+        } else if (mx >= sidebar_x + 10 + 150 - 20 && mx < sidebar_x + 10 + 150) {
+            cycle_mesh(1);
+            return true;
+        }
+    }
     else if (my >= 220 && my < 220 + 28) {
         clear_grid();
         return true;
