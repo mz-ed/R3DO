@@ -4,7 +4,6 @@
 
 void render_overhead(Grid& grid, Camera& cam, DisplayWin& display) {
     int w = display.width(), h = display.height();
-    display.clear_buffer();
     display.fill_rect(0, 0, w, h, 0x0d0d1a);
 
     int pad = 60;

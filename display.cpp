@@ -114,10 +114,15 @@ void DisplayWin::draw_text(int x, int y, const char* text, unsigned long color) 
 void DisplayWin::fill_rect(int x, int y, int w, int h, unsigned long color) {
     XSetForeground(d, gc, color);
     XFillRectangle(d, this->w, gc, x, y, w, h);
-}
-
-void DisplayWin::clear_buffer() {
-    memset(data_, 0, width_ * height_ * sizeof(unsigned int));
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w;
+    if (x1 > width_) x1 = width_;
+    int y1 = y + h;
+    if (y1 > height_) y1 = height_;
+    for (int py = y0; py < y1; py++)
+        for (int px = x0; px < x1; px++)
+            data_[py * width_ + px] = (unsigned int)color;
 }
 
 void DisplayWin::draw_crosshair(int cx, int cy, int size, unsigned long color) {
