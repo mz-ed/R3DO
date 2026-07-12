@@ -101,7 +101,6 @@ int main() {
                 ui.draw();
                 display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
             } else if (mx >= display.width() - 170 && ui.handle_click(mx, my)) {
-                save_scene(grid, SAVE_PATH);
                 render_and_ui();
             }
             if (ui.mode_was_clicked()) {
