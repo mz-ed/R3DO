@@ -14,6 +14,28 @@ Vec3 ray_color(const Ray& r, const Grid& grid, const Vec3& light_dir) {
         return rec.color * intensity;
     }
 
+    // Ground plane at bottom of grid
+    Vec3 gmin, gmax;
+    grid.grid_bounds(gmin, gmax);
+    double ground_y = gmin.y;
+    const Vec3& ro = r.origin();
+    const Vec3& rd = r.direction();
+    if (rd.y < -1e-10) {
+        double t = (ground_y - ro.y) / rd.y;
+        if (t > 0.001 && t < 1000.0) {
+            Vec3 p = r.at(t);
+            int cx = (int)std::floor(p.x / 0.8);
+            int cz = (int)std::floor(p.z / 0.8);
+            bool light_sq = ((cx + cz) & 1) == 0;
+            double ambient = 0.3;
+            Vec3 n(0, 1, 0);
+            double diff = std::max(0.0, dot(light, n));
+            double intensity = ambient + (1.0 - ambient) * diff;
+            Vec3 col = light_sq ? Vec3(0.25, 0.25, 0.3) : Vec3(0.15, 0.15, 0.2);
+            return col * intensity;
+        }
+    }
+
     return bg;
 }
 

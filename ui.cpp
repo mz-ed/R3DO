@@ -30,10 +30,28 @@ Vec3 UI::palette_color(int index) const {
 bool UI::try_place(ShapeType type) {
     Vec3 target = cam.pos + cam.forward() * 3.0;
     int i, j, k;
-    if (!grid.world_to_cell(target, i, j, k)) {
+
+    if (ground_mode_) {
+        // Raycast to ground plane
+        Vec3 gmin, gmax;
+        grid.grid_bounds(gmin, gmax);
+        double gy = gmin.y;
+        Vec3 ro = cam.pos;
+        Vec3 rd = cam.forward();
+        if (rd.y > -1e-10) return false;
+        double t = (gy - ro.y) / rd.y;
+        if (t < 0) return false;
+        target = ro + rd * t;
+        if (!grid.world_to_cell(target, i, j, k)) {
+            std::cerr << "FAIL: ground target (" << target.x << "," << target.y << "," << target.z << ") outside grid" << std::endl;
+            return false;
+        }
+        j = 0;
+    } else if (!grid.world_to_cell(target, i, j, k)) {
         std::cerr << "FAIL: target (" << target.x << "," << target.y << "," << target.z << ") outside grid" << std::endl;
         return false;
     }
+
     if (grid.get(i, j, k)) {
         std::cerr << "FAIL: cell (" << i << "," << j << "," << k << ") occupied" << std::endl;
         return false;
@@ -121,11 +139,15 @@ void UI::draw() {
     display.draw_text((display.width() - MENU_W) + 10, 352, "WASD move", 0x666688);
     display.draw_text((display.width() - MENU_W) + 10, 367, "Arrows look", 0x666688);
     display.draw_text((display.width() - MENU_W) + 10, 382, "Q/E up/down", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 397, "Space: HQ", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 412, "Esc: quit", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 397, "Space: HQ jump", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 412, "G: ground", 0x666688);
+    display.draw_text((display.width() - MENU_W) + 10, 427, "Esc: quit", 0x666688);
     display.fill_rect((display.width() - MENU_W) + 10, 432, 150, 28, 0x333355);
     display.fill_rect((display.width() - MENU_W) + 11, 433, 148, 26, 0x3d3d6b);
     display.draw_text((display.width() - MENU_W) + 15, 451, mode_label_, 0x55aaff);
+    display.fill_rect((display.width() - MENU_W) + 10, 466, 150, 28, 0x333355);
+    display.fill_rect((display.width() - MENU_W) + 11, 467, 148, 26, 0x3d3d6b);
+    display.draw_text((display.width() - MENU_W) + 15, 485, ground_label_, ground_mode_ ? 0x55ff55 : 0xff5555);
 
     if (save_dialog_active_) {
         draw_save_dialog();
@@ -169,6 +191,9 @@ bool UI::handle_click(int mx, int my) {
         return true;
     } else if (my >= 432 && my < 432 + 28) {
         mode_clicked_ = true;
+        return false;
+    } else if (my >= 466 && my < 466 + 28) {
+        ground_clicked_ = true;
         return false;
     }
     std::cerr << "Menu click at y=" << my << " (no button)" << std::endl;

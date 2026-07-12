@@ -37,12 +37,17 @@ public:
     UI(Grid& grid, Camera& cam, DisplayWin& display);
 
     bool mode_clicked_ = false;
+    bool ground_clicked_ = false;
+    bool ground_mode_ = false;
 
     void set_mode_label(const char* s) { mode_label_ = s; }
     const char* mode_label_ = "Raytrace";
+    void set_ground_label(const char* s) { ground_label_ = s; }
+    const char* ground_label_ = "Ground: OFF";
     void draw();
     bool handle_click(int mx, int my);
     bool mode_was_clicked() { bool c = mode_clicked_; mode_clicked_ = false; return c; }
+    bool ground_was_clicked() { bool c = ground_clicked_; ground_clicked_ = false; return c; }
     void draw_save_dialog();
     bool is_save_dialog_active() const { return save_dialog_active_; }
     void handle_save_dialog_key(int keysym, char c);
