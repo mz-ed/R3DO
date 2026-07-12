@@ -49,6 +49,17 @@ int main() {
     auto render_auto = [&]() { ui.set_mode_label(mode_names[render_mode]); };
     render_auto();
 
+    Vec3 gmin, gmax;
+    grid.grid_bounds(gmin, gmax);
+    double ground_y = gmin.y;
+    const double eye_height = 1.5;
+    const double gravity_accel = -0.015;
+    const double jump_speed = 0.3;
+    const double walk_speed = 0.5;
+    Vec3 vel(0, 0, 0);
+    bool on_ground = true;
+    cam.pos.y = ground_y + eye_height;
+
     auto render = [&](int samples) {
         if (render_mode == 0)
             render_scene(grid, cam, display, display.width(), display.height(), samples, light_dir);
@@ -58,10 +69,14 @@ int main() {
             render_overhead(grid, cam, display);
     };
 
+    auto render_and_ui = [&]() {
+        render(lq_samples);
+        ui.draw();
+        display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+    };
+
     std::cout << "Initial render..." << std::endl;
-    render(lq_samples);
-    ui.draw();
-    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+    render_and_ui();
 
     bool running = true;
 
@@ -89,16 +104,12 @@ int main() {
                 display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
             } else if (mx >= display.width() - 170 && ui.handle_click(mx, my)) {
                 save_scene(grid, SAVE_PATH);
-                render(lq_samples);
-                ui.draw();
-                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+                render_and_ui();
             }
             if (ui.mode_was_clicked()) {
                 render_mode = (render_mode + 1) % 3;
                 render_auto();
-                render(lq_samples);
-                ui.draw();
-                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+                render_and_ui();
             }
         }
 
@@ -109,9 +120,7 @@ int main() {
                 display.clear_mouse_delta();
                 double sens = 0.005;
                 cam.rotate(-dx * sens, dy * sens);
-                render(lq_samples);
-                ui.draw();
-                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+                render_and_ui();
             }
         }
 
@@ -143,51 +152,65 @@ int main() {
         display.clear_key();
 
         if (key) {
-            double move_speed = 0.5;
             double rot_speed = 0.06;
             bool moved = false;
 
             switch (key) {
-                case XK_w: cam.move_fwd(move_speed); moved = true; break;
-                case XK_s: cam.move_fwd(-move_speed); moved = true; break;
-                case XK_a: cam.move_right(-move_speed); moved = true; break;
-                case XK_d: cam.move_right(move_speed); moved = true; break;
-                case XK_q: cam.move_up(-move_speed); moved = true; break;
-                case XK_e: cam.move_up(move_speed); moved = true; break;
+                case XK_w: {
+                    Vec3 f = cam.forward();
+                    Vec3 hf = unit_vector(Vec3(f.x, 0, f.z));
+                    if (std::isfinite(hf.x)) cam.pos = cam.pos + hf * walk_speed;
+                    moved = true;
+                    break;
+                }
+                case XK_s: {
+                    Vec3 f = cam.forward();
+                    Vec3 hf = unit_vector(Vec3(f.x, 0, f.z));
+                    if (std::isfinite(hf.x)) cam.pos = cam.pos - hf * walk_speed;
+                    moved = true;
+                    break;
+                }
+                case XK_a: cam.pos = cam.pos - cam.right() * walk_speed; moved = true; break;
+                case XK_d: cam.pos = cam.pos + cam.right() * walk_speed; moved = true; break;
                 case XK_Left: cam.rotate(rot_speed, 0); moved = true; break;
                 case XK_Right: cam.rotate(-rot_speed, 0); moved = true; break;
                 case XK_Up: cam.rotate(0, rot_speed); moved = true; break;
                 case XK_Down: cam.rotate(0, -rot_speed); moved = true; break;
+                case XK_space:
+                    if (on_ground) {
+                        vel.y = jump_speed;
+                        on_ground = false;
+                        moved = true;
+                    }
+                    break;
                 case XK_F11:
                     display.toggle_fullscreen();
-                    render(lq_samples);
-                    ui.draw();
-                    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
-                    break;
-                case XK_space:
-                    std::cout << "Full quality..." << std::endl;
-                    render(hq_samples);
-                    ui.draw();
-                    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+                    render_and_ui();
                     break;
                 case XK_Escape: running = false; break;
                 case XK_b:
                 case XK_B:
                     render_mode = (render_mode + 1) % 3;
                     render_auto();
-                    render(lq_samples);
-                    ui.draw();
-                    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+                    render_and_ui();
                     break;
             }
 
             if (moved && running) {
-                std::cout << cam.pos.x << "," << cam.pos.y << "," << cam.pos.z << " " << std::flush;
-                render(lq_samples);
-                ui.draw();
-                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
-                std::cout << "done" << std::endl;
+                render_and_ui();
             }
+        }
+
+        // Physics tick
+        if (!on_ground) {
+            vel.y += gravity_accel;
+            cam.pos.y += vel.y;
+            if (cam.pos.y <= ground_y + eye_height) {
+                cam.pos.y = ground_y + eye_height;
+                vel.y = 0;
+                on_ground = true;
+            }
+            render_and_ui();
         }
 
         usleep(10000);
