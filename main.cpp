@@ -49,17 +49,6 @@ int main() {
     auto render_auto = [&]() { ui.set_mode_label(mode_names[render_mode]); };
     render_auto();
 
-    Vec3 gmin, gmax;
-    grid.grid_bounds(gmin, gmax);
-    double ground_y = gmin.y;
-    const double eye_height = 1.5;
-    const double gravity_accel = -0.015;
-    const double jump_speed = 0.3;
-    const double walk_speed = 0.5;
-    Vec3 vel(0, 0, 0);
-    bool on_ground = true;
-    cam.pos.y = ground_y + eye_height;
-
     auto render = [&](int samples) {
         if (render_mode == 0)
             render_scene(grid, cam, display, display.width(), display.height(), samples, light_dir);
@@ -152,40 +141,30 @@ int main() {
         display.clear_key();
 
         if (key) {
+            double move_speed = 0.5;
             double rot_speed = 0.06;
             bool moved = false;
 
             switch (key) {
-                case XK_w: {
-                    Vec3 f = cam.forward();
-                    Vec3 hf = unit_vector(Vec3(f.x, 0, f.z));
-                    if (std::isfinite(hf.x)) cam.pos = cam.pos + hf * walk_speed;
-                    moved = true;
-                    break;
-                }
-                case XK_s: {
-                    Vec3 f = cam.forward();
-                    Vec3 hf = unit_vector(Vec3(f.x, 0, f.z));
-                    if (std::isfinite(hf.x)) cam.pos = cam.pos - hf * walk_speed;
-                    moved = true;
-                    break;
-                }
-                case XK_a: cam.pos = cam.pos - cam.right() * walk_speed; moved = true; break;
-                case XK_d: cam.pos = cam.pos + cam.right() * walk_speed; moved = true; break;
+                case XK_w: cam.move_fwd(move_speed); moved = true; break;
+                case XK_s: cam.move_fwd(-move_speed); moved = true; break;
+                case XK_a: cam.move_right(-move_speed); moved = true; break;
+                case XK_d: cam.move_right(move_speed); moved = true; break;
+                case XK_q: cam.move_up(-move_speed); moved = true; break;
+                case XK_e: cam.move_up(move_speed); moved = true; break;
                 case XK_Left: cam.rotate(rot_speed, 0); moved = true; break;
                 case XK_Right: cam.rotate(-rot_speed, 0); moved = true; break;
                 case XK_Up: cam.rotate(0, rot_speed); moved = true; break;
                 case XK_Down: cam.rotate(0, -rot_speed); moved = true; break;
-                case XK_space:
-                    if (on_ground) {
-                        vel.y = jump_speed;
-                        on_ground = false;
-                        moved = true;
-                    }
-                    break;
                 case XK_F11:
                     display.toggle_fullscreen();
                     render_and_ui();
+                    break;
+                case XK_space:
+                    std::cout << "Full quality..." << std::endl;
+                    render(hq_samples);
+                    ui.draw();
+                    display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
                     break;
                 case XK_Escape: running = false; break;
                 case XK_b:
@@ -197,20 +176,10 @@ int main() {
             }
 
             if (moved && running) {
+                std::cout << cam.pos.x << "," << cam.pos.y << "," << cam.pos.z << " " << std::flush;
                 render_and_ui();
+                std::cout << "done" << std::endl;
             }
-        }
-
-        // Physics tick
-        if (!on_ground) {
-            vel.y += gravity_accel;
-            cam.pos.y += vel.y;
-            if (cam.pos.y <= ground_y + eye_height) {
-                cam.pos.y = ground_y + eye_height;
-                vel.y = 0;
-                on_ground = true;
-            }
-            render_and_ui();
         }
 
         usleep(10000);
