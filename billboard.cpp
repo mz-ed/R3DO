@@ -129,6 +129,22 @@ void render_billboard(Grid& grid, Camera& cam, DisplayWin& display, const Vec3& 
             }
             break;
         }
+        case 'm': { // mesh → small hexagon
+            int r = s.rad;
+            for (int dy = -r; dy <= r; dy++) {
+                int py = s.sy + dy;
+                if (py < 0 || py >= h) continue;
+                int hw = r;
+                if (dy < -r/2) hw = r - (r - (-dy - r/2));
+                else if (dy > r/2) hw = r - (r - (dy - r/2));
+                for (int dx = -hw; dx <= hw; dx++) {
+                    int px = s.sx + dx;
+                    if (px >= 0 && px < w)
+                        display.set_pixel(px, py, cr, cg, cb);
+                }
+            }
+            break;
+        }
         }
     }
 
