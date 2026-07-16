@@ -3,6 +3,7 @@
 #include "box.hpp"
 #include "cylinder.hpp"
 #include "cone.hpp"
+#include "obj_loader.hpp"
 #include <cstdio>
 #include <cstring>
 #include <sys/stat.h>
@@ -26,6 +27,10 @@ void save_scene(const Grid& grid, const std::string& filename) {
         }
     }
 
+    if (grid.terrain()) {
+        fprintf(f, "terrain %s\n", grid.terrain_path().c_str());
+    }
+
     fclose(f);
 }
 
@@ -38,14 +43,26 @@ void load_scene(const std::string& filename, Grid& grid) {
             for (int k = 0; k < grid.nz; k++)
                 grid.set(i, j, k, nullptr);
 
+    char line[1024];
     char type[16];
     int i, j, k, v;
     float r, g, b;
 
-    while (true) {
-        int n = fscanf(f, "%15s %d %d %d %f %f %f %d", type, &i, &j, &k, &r, &g, &b, &v);
+    while (fgets(line, sizeof(line), f)) {
+        if (line[0] == 't' && line[1] == 'e' && line[2] == 'r') {
+            // terrain line: "terrain <path>"
+            char path_buf[512];
+            if (sscanf(line, "terrain %511s", path_buf) == 1) {
+                Mesh* m = load_obj(path_buf, Vec3(0.3, 0.5, 0.25), Vec3(0, 0, 0), 1.0);
+                if (m) grid.set_terrain(m, path_buf);
+            }
+            continue;
+        }
+
+        int n = sscanf(line, "%15s %d %d %d %f %f %f %d", type, &i, &j, &k, &r, &g, &b, &v);
         if (n == 7) v = 1;
-        else if (n < 7) break;
+        else if (n < 7) continue;
+
         Vec3 color(r, g, b);
         Vec3 c = grid.cell_center(i, j, k);
         double cs = grid.cell_size;

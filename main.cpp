@@ -67,9 +67,6 @@ int main() {
     std::cout << "Initial render..." << std::endl;
     render_and_ui();
 
-    Vec3 gmin, gmax;
-    grid.grid_bounds(gmin, gmax);
-    double ground_y = gmin.y;
     const double eye_height = 1.5;
     const double gravity_accel = -0.015;
     const double jump_speed = 0.3;
@@ -111,7 +108,7 @@ int main() {
             if (ui.ground_was_clicked()) {
                 ui.ground_mode_ = !ui.ground_mode_;
                 ui.set_ground_label(ui.ground_mode_ ? "Ground: ON" : "Ground: OFF");
-                if (ui.ground_mode_) { cam.pos.y = ground_y + eye_height; vel.y = 0; on_ground = true; }
+                if (ui.ground_mode_) { cam.pos.y = grid.get_ground_height(cam.pos.x, cam.pos.z) + eye_height; vel.y = 0; on_ground = true; }
                 render_and_ui();
             }
         }
@@ -229,7 +226,7 @@ int main() {
                 case XK_G:
                     ui.ground_mode_ = !ui.ground_mode_;
                     ui.set_ground_label(ui.ground_mode_ ? "Ground: ON" : "Ground: OFF");
-                    if (ui.ground_mode_) { cam.pos.y = ground_y + eye_height; vel.y = 0; on_ground = true; }
+                    if (ui.ground_mode_) { cam.pos.y = grid.get_ground_height(cam.pos.x, cam.pos.z) + eye_height; vel.y = 0; on_ground = true; }
                     render_and_ui();
                     break;
                 case XK_space:
@@ -264,8 +261,9 @@ int main() {
         if (ui.ground_mode_ && !on_ground) {
             vel.y += gravity_accel;
             cam.pos.y += vel.y;
-            if (cam.pos.y <= ground_y + eye_height) {
-                cam.pos.y = ground_y + eye_height;
+            double gh = grid.get_ground_height(cam.pos.x, cam.pos.z);
+            if (cam.pos.y <= gh + eye_height) {
+                cam.pos.y = gh + eye_height;
                 vel.y = 0;
                 on_ground = true;
             }

@@ -3,6 +3,9 @@
 
 #include "hittable.hpp"
 #include "box.hpp"
+#include "mesh.hpp"
+#include "ray.hpp"
+#include <string>
 #include <vector>
 #include <limits>
 
@@ -13,6 +16,8 @@ public:
     Vec3 origin;
     std::vector<Hittable*> cells;
     std::vector<Hittable*> free_objects_;
+    Mesh* terrain_ = nullptr;
+    std::string terrain_path_;
     int visible_count_ = 0;
 
     static const int CHUNK_BITS = 2;
@@ -32,6 +37,7 @@ public:
     ~Grid() {
         for (auto* c : cells) delete c;
         for (auto* f : free_objects_) delete f;
+        delete terrain_;
     }
 
     int idx(int i, int j, int k) const {
@@ -120,6 +126,26 @@ public:
     }
 
     const std::vector<Hittable*>& free_objects() const { return free_objects_; }
+
+    void set_terrain(Mesh* m, const std::string& path = "") { delete terrain_; terrain_ = m; terrain_path_ = path; }
+    Mesh* terrain() const { return terrain_; }
+    const std::string& terrain_path() const { return terrain_path_; }
+    bool has_terrain() const { return terrain_ && terrain_->is_visible(); }
+
+    double get_ground_height(double x, double z) const {
+        if (!has_terrain()) {
+            Vec3 gmin, gmax;
+            grid_bounds(gmin, gmax);
+            return gmin.y;
+        }
+        Ray down(Vec3(x, 1000, z), Vec3(0, -1, 0));
+        HitRecord rec;
+        if (terrain_->hit(down, 0.001, 2000.0, rec))
+            return rec.p.y;
+        Vec3 gmin, gmax;
+        grid_bounds(gmin, gmax);
+        return gmin.y;
+    }
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
         double closest = t_max;
@@ -256,6 +282,15 @@ public:
             int new_chunk = cell_idx[axis] >> CHUNK_BITS;
             if (new_chunk != prev_chunk) chunk_idx[axis] = new_chunk;
             tMax[axis] += tDelta[axis];
+        }
+
+        // Check terrain last (background, only if nothing closer)
+        if (terrain_ && terrain_->is_visible()) {
+            if (terrain_->hit(r, t_min, closest, temp_rec)) {
+                rec = temp_rec;
+                rec.hittable = nullptr; // terrain is not deletable
+                hit_any = true;
+            }
         }
 
         return hit_any;

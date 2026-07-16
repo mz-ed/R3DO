@@ -62,16 +62,25 @@ bool UI::try_place(ShapeType type) {
     int i, j, k;
 
     if (ground_mode_) {
-        // Raycast to ground plane
-        Vec3 gmin, gmax;
-        grid.grid_bounds(gmin, gmax);
-        double gy = gmin.y;
         Vec3 ro = cam.pos;
         Vec3 rd = cam.forward();
-        if (rd.y > -1e-10) return false;
-        double t = (gy - ro.y) / rd.y;
-        if (t < 0) return false;
-        target = ro + rd * t;
+        if (grid.has_terrain()) {
+            // Raycast forward against terrain mesh
+            Ray fwd(ro, rd);
+            HitRecord trec;
+            if (grid.terrain()->hit(fwd, 0.001, 100.0, trec))
+                target = trec.p;
+            else
+                target = ro + rd * 5.0; // fallback distance
+        } else {
+            if (rd.y > -1e-10) return false;
+            Vec3 gmin, gmax;
+            grid.grid_bounds(gmin, gmax);
+            double gy = gmin.y;
+            double t = (gy - ro.y) / rd.y;
+            if (t < 0) return false;
+            target = ro + rd * t;
+        }
         if (!grid.world_to_cell(target, i, j, k)) {
             std::cerr << "FAIL: ground target (" << target.x << "," << target.y << "," << target.z << ") outside grid" << std::endl;
             return false;
@@ -141,6 +150,7 @@ void UI::clear_grid() {
         grid.remove_free(f);
         delete f;
     }
+    grid.set_terrain(nullptr, "");
 }
 
 int UI::count_objects() const {
@@ -225,6 +235,19 @@ void UI::draw() {
     display.fill_rect((display.width() - MENU_W) + 11, 467, 148, 26, 0x3d3d6b);
     display.draw_text((display.width() - MENU_W) + 15, 485, ground_label_, ground_mode_ ? 0x55ff55 : 0xff5555);
 
+    // Terrain
+    display.fill_rect((display.width() - MENU_W) + 10, 500, 150, 28, 0x333355);
+    display.fill_rect((display.width() - MENU_W) + 11, 501, 148, 26, 0x3d3d6b);
+    display.draw_text((display.width() - MENU_W) + 15, 519, "Set Terrain", grid.has_terrain() ? 0x55ff55 : 0xccccff);
+    {
+        char tbuf[128];
+        if (grid.has_terrain())
+            snprintf(tbuf, sizeof(tbuf), "Terrain: loaded");
+        else
+            snprintf(tbuf, sizeof(tbuf), "Terrain: none");
+        display.draw_text((display.width() - MENU_W) + 10, 540, tbuf, grid.has_terrain() ? 0x55aa55 : 0x555555);
+    }
+
     if (save_dialog_active_) {
         draw_save_dialog();
         cursor_counter_++;
@@ -283,6 +306,20 @@ bool UI::handle_click(int mx, int my) {
     } else if (my >= 466 && my < 466 + 28) {
         ground_clicked_ = true;
         return false;
+    } else if (my >= 500 && my < 500 + 28) {
+        if (mesh_files_.empty()) {
+            std::cerr << "FAIL: no .obj files to load as terrain" << std::endl;
+            return true;
+        }
+        const std::string& path = mesh_files_[mesh_idx_];
+        Mesh* m = load_obj(path.c_str(), Vec3(0.3, 0.5, 0.25), Vec3(0, 0, 0), 1.0);
+        if (m) {
+            grid.set_terrain(m, path);
+            std::cerr << "Terrain set from " << path << std::endl;
+        } else {
+            std::cerr << "FAIL: could not load terrain from " << path << std::endl;
+        }
+        return true;
     }
     std::cerr << "Menu click at y=" << my << " (no button)" << std::endl;
     return false;
