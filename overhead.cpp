@@ -72,6 +72,24 @@ void render_overhead(Grid& grid, Camera& cam, DisplayWin& display) {
         }
     }
 
+    // Free objects (meshes) → colored diamond markers
+    for (auto* f : grid.free_objects()) {
+        if (!f || !f->is_visible()) continue;
+        Vec3 pos = f->get_center();
+        int* p = to_screen(pos.x, pos.z);
+        Vec3 col = f->get_color();
+        int cr = int(255.999 * std::sqrt(col.x));
+        int cg = int(255.999 * std::sqrt(col.y));
+        int cb = int(255.999 * std::sqrt(col.z));
+        unsigned long col24 = (cr << 16) | (cg << 8) | cb;
+        int ms = 6;
+        for (int dy = -ms; dy <= ms; dy++) {
+            int hw = ms - std::abs(dy);
+            for (int dx = -hw; dx <= hw; dx++)
+                display.set_pixel(p[0] + dx, p[1] + dy, cr, cg, cb);
+        }
+    }
+
     int* cp = to_screen(cam.pos.x, cam.pos.z);
     display.fill_rect(cp[0] - 3, cp[1] - 3, 7, 7, 0xffffff);
 

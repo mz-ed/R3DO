@@ -138,9 +138,28 @@ int main() {
                 if (dist < 5) {
                     HitRecord rec;
                     if (hit_center(grid, cam, display.width(), display.height(), rec)) {
-                        int i, j, k;
-                        if (grid.world_to_cell(rec.p, i, j, k) && grid.get(i, j, k)) {
-                            grid.set(i, j, k, nullptr);
+                        bool need_render = false;
+                        // Check if hit object is a free object (mesh)
+                        if (rec.hittable) {
+                            auto& free = grid.free_objects();
+                            for (size_t fi = 0; fi < free.size(); fi++) {
+                                if (free[fi] == rec.hittable) {
+                                    grid.remove_free(rec.hittable);
+                                    delete rec.hittable;
+                                    need_render = true;
+                                    break;
+                                }
+                            }
+                        }
+                        // Otherwise, cell-based deletion
+                        if (!need_render) {
+                            int i, j, k;
+                            if (grid.world_to_cell(rec.p, i, j, k) && grid.get(i, j, k)) {
+                                grid.set(i, j, k, nullptr);
+                                need_render = true;
+                            }
+                        }
+                        if (need_render) {
                             save_scene(grid, SAVE_PATH);
                             render(lq_samples);
                             ui.draw();

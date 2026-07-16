@@ -130,5 +130,9 @@ static bool hit_bvh_node(const Ray& r, double t_min, double t_max, HitRecord& re
 
 bool Mesh::hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const {
     if (!bvh_root) return false;
-    return hit_bvh_node(r, t_min, t_max, rec, bvh_root, triangles);
+    if (hit_bvh_node(r, t_min, t_max, rec, bvh_root, triangles)) {
+        rec.color = color;
+        return true;
+    }
+    return false;
 }

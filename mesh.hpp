@@ -40,6 +40,10 @@ public:
 
     const char* type_name() const override { return "mesh"; }
     Vec3 get_color() const override { return color; }
+    Vec3 get_center() const override {
+        if (bvh_root) return (bvh_root->bbox.min + bvh_root->bbox.max) * 0.5;
+        return Vec3(0,0,0);
+    }
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override;
 };
 

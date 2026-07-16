@@ -53,6 +53,28 @@ void render_billboard(Grid& grid, Camera& cam, DisplayWin& display, const Vec3& 
         }
     }
 
+    // Free objects (meshes not tied to a single cell)
+    for (auto* f : grid.free_objects()) {
+        if (!f || !f->is_visible()) continue;
+        Vec3 pos = f->get_center();
+        Vec3 rel = pos - cam.pos;
+        double depth = dot(rel, fwd);
+        if (depth <= 0) continue;
+
+        double rx = dot(rel, rgt);
+        double ry = dot(rel, up);
+
+        int sx = (int)(w/2.0 + (rx / depth) * fl * w / vw + 0.5);
+        int sy = (int)(h/2.0 - (ry / depth) * fl * h / vh + 0.5);
+
+        double r = grid.cell_size * 0.45;
+        int rad = (int)(r * fl * w / (vw * depth) + 1);
+        if (rad < 1) rad = 1;
+
+        const char* tn = f->type_name();
+        sprites.push_back({sx, sy, rad, f->get_color(), depth, tn[0]});
+    }
+
     std::sort(sprites.begin(), sprites.end(),
         [](const Sprite& a, const Sprite& b) { return a.depth > b.depth; });
 

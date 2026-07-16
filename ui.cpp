@@ -118,8 +118,8 @@ bool UI::try_place(ShapeType type) {
             const std::string& path = mesh_files_[mesh_idx_];
             Mesh* m = load_obj(path.c_str(), col, c, cs * 0.4);
             if (m) {
-                grid.set(i, j, k, m);
-                std::cerr << "Mesh from " << path << " at cell (" << i << "," << j << "," << k << ")" << std::endl;
+                grid.add_free(m);
+                std::cerr << "Mesh from " << path << " (free object)" << std::endl;
             } else {
                 std::cerr << "FAIL: could not load " << path << std::endl;
                 return false;
@@ -136,6 +136,11 @@ void UI::clear_grid() {
         for (int j = 0; j < grid.ny; j++)
             for (int k = 0; k < grid.nz; k++)
                 grid.set(i, j, k, nullptr);
+    while (!grid.free_objects().empty()) {
+        Hittable* f = grid.free_objects()[0];
+        grid.remove_free(f);
+        delete f;
+    }
 }
 
 int UI::count_objects() const {
@@ -144,6 +149,7 @@ int UI::count_objects() const {
         for (int j = 0; j < grid.ny; j++)
             for (int k = 0; k < grid.nz; k++)
                 if (grid.get(i, j, k)) count++;
+    count += (int)grid.free_objects().size();
     return count;
 }
 

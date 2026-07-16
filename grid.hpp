@@ -12,6 +12,7 @@ public:
     double cell_size;
     Vec3 origin;
     std::vector<Hittable*> cells;
+    std::vector<Hittable*> free_objects_;
     int visible_count_ = 0;
 
     static const int CHUNK_BITS = 2;
@@ -30,6 +31,7 @@ public:
 
     ~Grid() {
         for (auto* c : cells) delete c;
+        for (auto* f : free_objects_) delete f;
     }
 
     int idx(int i, int j, int k) const {
@@ -100,8 +102,45 @@ public:
 
     bool has_visible() const { return visible_count_ > 0; }
 
+    void add_free(Hittable* obj) {
+        if (obj) {
+            free_objects_.push_back(obj);
+            if (obj->is_visible()) visible_count_++;
+        }
+    }
+
+    void remove_free(Hittable* obj) {
+        for (auto it = free_objects_.begin(); it != free_objects_.end(); ++it) {
+            if (*it == obj) {
+                if (obj->is_visible()) visible_count_--;
+                free_objects_.erase(it);
+                return;
+            }
+        }
+    }
+
+    const std::vector<Hittable*>& free_objects() const { return free_objects_; }
+
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
-        if (visible_count_ == 0) return false;
+        double closest = t_max;
+        bool hit_any = false;
+        HitRecord temp_rec;
+        int vis_free = 0;
+
+        // Check free objects (big objects not tied to a single cell)
+        for (auto* f : free_objects_) {
+            if (f && f->is_visible()) {
+                vis_free++;
+                if (f->hit(r, t_min, closest, temp_rec)) {
+                    temp_rec.hittable = f;
+                    rec = temp_rec;
+                    closest = temp_rec.t;
+                    hit_any = true;
+                }
+            }
+        }
+
+        if (visible_count_ - vis_free <= 0) return hit_any;
         Vec3 gmin, gmax;
         grid_bounds(gmin, gmax);
 
@@ -113,7 +152,7 @@ public:
             double maxv = (a == 0) ? gmax.x : (a == 1) ? gmax.y : gmax.z;
 
             if (std::abs(d) < 1e-10) {
-                if (o < minv || o > maxv) return false;
+                if (o < minv || o > maxv) return hit_any;
                 continue;
             }
 
@@ -123,14 +162,14 @@ public:
 
             if (t0 > t_enter) t_enter = t0;
             if (t1 < t_exit) t_exit = t1;
-            if (t_exit <= t_enter) return false;
+            if (t_exit <= t_enter) return hit_any;
         }
 
         double ro[3] = {r.origin().x, r.origin().y, r.origin().z};
 
         Vec3 entry = r.at(t_enter + 0.0001);
         int i, j, k;
-        if (!world_to_cell(entry, i, j, k)) return false;
+        if (!world_to_cell(entry, i, j, k)) return hit_any;
 
         double rd[3] = {r.direction().x, r.direction().y, r.direction().z};
         double gm[3] = {gmin.x, gmin.y, gmin.z};
@@ -157,8 +196,6 @@ public:
             }
         }
 
-        HitRecord temp_rec;
-        double closest = t_exit;
         int max_steps = nx + ny + nz;
 
         for (int s = 0; s < max_steps; s++) {
@@ -200,8 +237,10 @@ public:
             Hittable* obj = cells[idx(cell_idx[0], cell_idx[1], cell_idx[2])];
             if (obj && obj->is_visible()) {
                 if (obj->hit(r, t_min, closest, temp_rec)) {
+                    temp_rec.hittable = obj;
                     rec = temp_rec;
-                    return true;
+                    closest = temp_rec.t;
+                    hit_any = true;
                 }
             }
 
@@ -219,7 +258,7 @@ public:
             tMax[axis] += tDelta[axis];
         }
 
-        return false;
+        return hit_any;
     }
 };
 

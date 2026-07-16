@@ -10,6 +10,7 @@ struct HitRecord {
     double t;
     bool front_face;
     Vec3 color;
+    class Hittable* hittable = nullptr;
 
     void set_face_normal(const Ray& r, const Vec3& outward_normal) {
         front_face = dot(r.direction(), outward_normal) < 0;
@@ -25,6 +26,7 @@ public:
     virtual bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const = 0;
     virtual const char* type_name() const { return "unknown"; }
     virtual Vec3 get_color() const { return Vec3(0,0,0); }
+    virtual Vec3 get_center() const { return Vec3(0,0,0); }
     bool is_visible() const { return visible_; }
     void set_visible(bool v) { visible_ = v; }
 };
