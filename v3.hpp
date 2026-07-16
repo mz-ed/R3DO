@@ -18,6 +18,8 @@ public:
     Vec3& operator += (const Vec3& v) { x += v.x; y += v.y; z += v.z; return *this; }
     
     Vec3& operator *= (double t) { x *= t; y *= t; z *= t; return *this; }
+    double operator[](int i) const { return i == 0 ? x : (i == 1 ? y : z); }
+    double& operator[](int i) { return i == 0 ? x : (i == 1 ? y : z); }
     
     double length() const { return std::sqrt(x*x + y*y + z*z); }
 
