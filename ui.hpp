@@ -11,6 +11,14 @@
 
 enum class ShapeType { SPHERE, BOX, CYLINDER, CONE, MESH };
 
+enum class BtnID {
+    SPHERE, BOX, CYLINDER, CONE, MESH,
+    MESH_PREV, MESH_NEXT,
+    CLEAR, SAVE,
+    MODE, GROUND, TERRAIN,
+    NONE
+};
+
 class UI {
     Grid& grid;
     Camera& cam;
@@ -18,12 +26,30 @@ class UI {
     int palette_idx_;
 
     static const int MENU_W = 170;
+    static const int BTN_H = 27;
+    static const int BTN_GAP = 3;
+    static const int SML_H = 18;
 
-    struct Button {
-        int x, y, w, h;
-        const char* text;
+    struct ButtonDef {
+        BtnID id;
+        const char* icon;
+        const char* label;
     };
 
+    struct Section {
+        const char* title;
+        std::vector<ButtonDef> buttons;
+    };
+
+    std::vector<Section> sections_;
+    int mouse_x_ = 0, mouse_y_ = 0;
+    BtnID hovered_ = BtnID::NONE;
+
+    int sidebar_x() const { return display.width() - MENU_W; }
+    void build_sections();
+    int section_y(int section_idx) const;
+    int button_y(int section_idx, int btn_idx) const;
+    BtnID button_at(int mx, int my) const;
     Vec3 palette_color(int index) const;
     bool try_place(ShapeType type);
     void clear_grid();

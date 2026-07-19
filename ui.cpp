@@ -11,6 +11,10 @@
 #include <sys/stat.h>
 #include <algorithm>
 
+static const int SX_OFF = 10;
+static const int BTN_W = 150;
+static const int SML_BTN_W = 20;
+
 UI::UI(Grid& grid, Camera& cam, DisplayWin& display)
     : grid(grid), cam(cam), display(display), palette_idx_(0) {
     save_msg_[0] = 0;
@@ -20,6 +24,74 @@ UI::UI(Grid& grid, Camera& cam, DisplayWin& display)
     save_name_len_ = 0;
     cursor_counter_ = 0;
     scan_meshes();
+    build_sections();
+}
+
+void UI::build_sections() {
+    sections_ = {
+        {"Add", {
+            {BtnID::SPHERE,    "O", "Sphere"},
+            {BtnID::BOX,       "#", "Box"},
+            {BtnID::CYLINDER,  "|", "Cylinder"},
+            {BtnID::CONE,      "/\\", "Cone"},
+            {BtnID::MESH,      "M", "Mesh"},
+        }},
+        {"Actions", {
+            {BtnID::CLEAR,     "X", "Clear All"},
+            {BtnID::SAVE,      "S", "Save"},
+        }},
+        {"Settings", {
+            {BtnID::MODE,      "", mode_label_},
+            {BtnID::GROUND,    "", ground_label_},
+            {BtnID::TERRAIN,   "", "Set Terrain"},
+        }},
+    };
+}
+
+int UI::section_y(int si) const {
+    int y = 30; // start below title
+    for (int s = 0; s < si; s++) {
+        y += 16; // section header
+        y += (int)sections_[s].buttons.size() * (BTN_H + BTN_GAP);
+        if (!sections_[s].buttons.empty()) y -= BTN_GAP;
+        y += 8; // section spacing
+        // mesh selector space after MESH section
+        if (s == 0) y += SML_H + BTN_GAP;
+    }
+    // info section at bottom
+    return y;
+}
+
+int UI::button_y(int si, int bi) const {
+    int y = section_y(si);
+    y += 16; // header
+    y += bi * (BTN_H + BTN_GAP);
+    return y;
+}
+
+BtnID UI::button_at(int mx, int my) const {
+    int sx = sidebar_x();
+    if (mx < sx || mx >= sx + MENU_W) return BtnID::NONE;
+
+    for (size_t si = 0; si < sections_.size(); si++) {
+        for (size_t bi = 0; bi < sections_[si].buttons.size(); bi++) {
+            int bx = sx + SX_OFF;
+            int by = button_y((int)si, (int)bi);
+            int bw = BTN_W, bh = BTN_H;
+
+            // Mesh section: also check mesh prev/next smaller buttons
+            if (sections_[si].buttons[bi].id == BtnID::MESH && !mesh_files_.empty()) {
+                int my2 = by + BTN_H + BTN_GAP;
+                if (my >= my2 && my < my2 + SML_H) {
+                    if (mx >= bx && mx < bx + SML_BTN_W) return BtnID::MESH_PREV;
+                    if (mx >= bx + BTN_W - SML_BTN_W && mx < bx + BTN_W) return BtnID::MESH_NEXT;
+                }
+            }
+
+            if (my >= by && my < by + bh) return sections_[si].buttons[bi].id;
+        }
+    }
+    return BtnID::NONE;
 }
 
 void UI::scan_meshes() {
@@ -65,13 +137,12 @@ bool UI::try_place(ShapeType type) {
         Vec3 ro = cam.pos;
         Vec3 rd = cam.forward();
         if (grid.has_terrain()) {
-            // Raycast forward against terrain mesh
             Ray fwd(ro, rd);
             HitRecord trec;
             if (grid.terrain()->hit(fwd, 0.001, 100.0, trec))
                 target = trec.p;
             else
-                target = ro + rd * 5.0; // fallback distance
+                target = ro + rd * 5.0;
         } else {
             if (rd.y > -1e-10) return false;
             Vec3 gmin, gmax;
@@ -164,89 +235,130 @@ int UI::count_objects() const {
 }
 
 void UI::draw() {
-    display.fill_rect((display.width() - MENU_W), 0, MENU_W, display.height(), 0x1a1a2e);
-    display.fill_rect((display.width() - MENU_W) - 2, 0, 2, display.height(), 0x444466);
+    int sx = sidebar_x();
+    mouse_x_ = display.mouse_x();
+    mouse_y_ = display.mouse_y();
 
-    display.draw_text((display.width() - MENU_W) + 10, 22, "R3DO", 0xffffff);
-    display.fill_rect((display.width() - MENU_W) + 10, 28, 40, 1, 0x666688);
+    // Sidebar background
+    display.fill_rect(sx, 0, MENU_W, display.height(), 0x1a1a2e);
+    display.fill_rect(sx - 2, 0, 2, display.height(), 0x444466);
 
-    Button buttons[] = {
-        {(display.width() - MENU_W) + 10, 45, 150, 28, "Add Sphere"},
-        {(display.width() - MENU_W) + 10, 80, 150, 28, "Add Box"},
-        {(display.width() - MENU_W) + 10, 115, 150, 28, "Add Cylinder"},
-        {(display.width() - MENU_W) + 10, 150, 150, 28, "Add Cone"},
-        {(display.width() - MENU_W) + 10, 185, 150, 28, "Add Mesh"},
-        {(display.width() - MENU_W) + 10, 220, 150, 28, "Clear All"},
-        {(display.width() - MENU_W) + 10, 255, 150, 28, "Save"},
-    };
+    // Title
+    display.draw_text(sx + SX_OFF, 14, "R3DO", 0xffffff);
+    display.fill_rect(sx + SX_OFF, 20, 40, 1, 0x666688);
 
-    for (auto& btn : buttons) {
-        display.fill_rect(btn.x, btn.y, btn.w, btn.h, 0x333355);
-        display.fill_rect(btn.x + 1, btn.y + 1, btn.w - 2, btn.h - 2, 0x3d3d6b);
-        display.draw_text(btn.x + 10, btn.y + 19, btn.text, 0xccccff);
+    // Determine hover
+    hovered_ = button_at(mouse_x_, mouse_y_);
+
+    // Draw sections
+    for (size_t si = 0; si < sections_.size(); si++) {
+        int sy = section_y((int)si);
+
+        // Section header
+        display.draw_text(sx + SX_OFF, sy, sections_[si].title, 0x888888);
+        display.fill_rect(sx + SX_OFF, sy + 14, BTN_W, 1, 0x333355);
+
+        // Draw buttons
+        for (size_t bi = 0; bi < sections_[si].buttons.size(); bi++) {
+            const auto& btn = sections_[si].buttons[bi];
+            int by = button_y((int)si, (int)bi);
+            int bx = sx + SX_OFF;
+            bool hover = (hovered_ == btn.id);
+
+            unsigned long bg = hover ? 0x44446e : 0x333355;
+            unsigned long bg2 = hover ? 0x505080 : 0x3d3d6b;
+
+            // Special styling for mode/ground/terrain
+            unsigned long fg = 0xccccff;
+            if (btn.id == BtnID::MODE) fg = 0x55aaff;
+            else if (btn.id == BtnID::GROUND) fg = ground_mode_ ? 0x55ff55 : 0xff5555;
+            else if (btn.id == BtnID::TERRAIN) fg = grid.has_terrain() ? 0x55ff55 : 0xccccff;
+
+            // Button background
+            display.fill_rect(bx, by, BTN_W, BTN_H, bg);
+            display.fill_rect(bx + 1, by + 1, BTN_W - 2, BTN_H - 2, bg2);
+
+            // Icon + label
+            char label[64];
+            if (btn.icon[0]) {
+                snprintf(label, sizeof(label), "%s %s", btn.icon, btn.label);
+            } else {
+                snprintf(label, sizeof(label), "%s", btn.label);
+            }
+            display.draw_text(bx + 8, by + 18, label, fg);
+
+            // Mesh selector below MESH button
+            if (btn.id == BtnID::MESH && !mesh_files_.empty()) {
+                int my2 = by + BTN_H + BTN_GAP;
+                const std::string& name = mesh_files_[mesh_idx_];
+                const char* slash = strrchr(name.c_str(), '/');
+                const char* shortname = slash ? slash + 1 : name.c_str();
+
+                // "<" button
+                bool prev_hover = (hovered_ == BtnID::MESH_PREV);
+                unsigned long pbg = prev_hover ? 0x44446e : 0x333355;
+                unsigned long pbg2 = prev_hover ? 0x505080 : 0x3d3d6b;
+                display.fill_rect(bx, my2, SML_BTN_W, SML_H, pbg);
+                display.fill_rect(bx + 1, my2 + 1, SML_BTN_W - 2, SML_H - 2, pbg2);
+                display.draw_text(bx + 6, my2 + 13, "<", 0xccccff);
+
+                // filename
+                char flabel[96];
+                snprintf(flabel, sizeof(flabel), "[%zu/%zu] %s", mesh_idx_ + 1, mesh_files_.size(), shortname);
+                display.draw_text(bx + SML_BTN_W + 4, my2 + 13, flabel, 0x88aaff);
+
+                // ">" button
+                bool next_hover = (hovered_ == BtnID::MESH_NEXT);
+                unsigned long nbg = next_hover ? 0x44446e : 0x333355;
+                unsigned long nbg2 = next_hover ? 0x505080 : 0x3d3d6b;
+                int rx = bx + BTN_W - SML_BTN_W;
+                display.fill_rect(rx, my2, SML_BTN_W, SML_H, nbg);
+                display.fill_rect(rx + 1, my2 + 1, SML_BTN_W - 2, SML_H - 2, nbg2);
+                display.draw_text(rx + 6, my2 + 13, ">", 0xccccff);
+            }
+        }
     }
 
-    // Mesh file selector
-    if (!mesh_files_.empty()) {
-        int mx = (display.width() - MENU_W) + 10;
-        int my = 217;
-        const std::string& name = mesh_files_[mesh_idx_];
-        const char* shortname = name.c_str();
-        const char* slash = strrchr(shortname, '/');
-        if (slash) shortname = slash + 1;
-        // "<" button
-        display.fill_rect(mx, my, 20, 18, 0x333355);
-        display.fill_rect(mx + 1, my + 1, 18, 16, 0x3d3d6b);
-        display.draw_text(mx + 6, my + 14, "<", 0xccccff);
-        // filename
-        char label[128];
-        snprintf(label, sizeof(label), " [%zu/%zu] %s", mesh_idx_ + 1, mesh_files_.size(), shortname);
-        display.draw_text(mx + 24, my + 14, label, 0x88aaff);
-        // ">" button
-        int rx = mx + 150 - 20;
-        display.fill_rect(rx, my, 20, 18, 0x333355);
-        display.fill_rect(rx + 1, my + 1, 18, 16, 0x3d3d6b);
-        display.draw_text(rx + 6, my + 14, ">", 0xccccff);
+    // Terrain status (below terrain btn)
+    int terrain_by = button_y(2, 2);
+    int status_y = terrain_by + BTN_H + BTN_GAP + 4;
+    {
+        char tbuf[64];
+        snprintf(tbuf, sizeof(tbuf), "Terrain: %s", grid.has_terrain() ? "loaded" : "none");
+        display.draw_text(sx + SX_OFF, status_y, tbuf, grid.has_terrain() ? 0x55aa55 : 0x555555);
     }
+
+    // Info section (below settings)
+    int info_y = status_y + 18;
+    // separator
+    display.fill_rect(sx + SX_OFF, info_y, BTN_W, 1, 0x333355);
+    info_y += 8;
 
     char buf[64];
     snprintf(buf, sizeof(buf), "Objects: %d", count_objects());
-    display.draw_text((display.width() - MENU_W) + 10, 265, buf, 0xaaaaaa);
+    display.draw_text(sx + SX_OFF, info_y, buf, 0xaaaaaa);
+    info_y += 18;
 
     snprintf(buf, sizeof(buf), "Cam: %.1f %.1f %.1f", cam.pos.x, cam.pos.y, cam.pos.z);
-    display.draw_text((display.width() - MENU_W) + 10, 285, buf, 0x666688);
+    display.draw_text(sx + SX_OFF, info_y, buf, 0x666688);
+    info_y += 18;
 
     if (save_msg_timer_ > 0) {
         save_msg_timer_--;
-        display.draw_text((display.width() - MENU_W) + 10, 310, save_msg_, 0x55ff55);
+        display.draw_text(sx + SX_OFF, info_y, save_msg_, 0x55ff55);
+        info_y += 18;
     }
 
-    display.draw_text((display.width() - MENU_W) + 10, 335, "Controls:", 0x888888);
-    display.draw_text((display.width() - MENU_W) + 10, 352, "WASD move", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 367, "Arrows look", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 382, "Q/E up/down", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 397, "Space: HQ jump", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 412, "G: ground", 0x666688);
-    display.draw_text((display.width() - MENU_W) + 10, 427, "Esc: quit", 0x666688);
-    display.fill_rect((display.width() - MENU_W) + 10, 432, 150, 28, 0x333355);
-    display.fill_rect((display.width() - MENU_W) + 11, 433, 148, 26, 0x3d3d6b);
-    display.draw_text((display.width() - MENU_W) + 15, 451, mode_label_, 0x55aaff);
-    display.fill_rect((display.width() - MENU_W) + 10, 466, 150, 28, 0x333355);
-    display.fill_rect((display.width() - MENU_W) + 11, 467, 148, 26, 0x3d3d6b);
-    display.draw_text((display.width() - MENU_W) + 15, 485, ground_label_, ground_mode_ ? 0x55ff55 : 0xff5555);
+    info_y += 4;
+    display.fill_rect(sx + SX_OFF, info_y, BTN_W, 1, 0x333355);
+    info_y += 8;
 
-    // Terrain
-    display.fill_rect((display.width() - MENU_W) + 10, 500, 150, 28, 0x333355);
-    display.fill_rect((display.width() - MENU_W) + 11, 501, 148, 26, 0x3d3d6b);
-    display.draw_text((display.width() - MENU_W) + 15, 519, "Set Terrain", grid.has_terrain() ? 0x55ff55 : 0xccccff);
-    {
-        char tbuf[128];
-        if (grid.has_terrain())
-            snprintf(tbuf, sizeof(tbuf), "Terrain: loaded");
-        else
-            snprintf(tbuf, sizeof(tbuf), "Terrain: none");
-        display.draw_text((display.width() - MENU_W) + 10, 540, tbuf, grid.has_terrain() ? 0x55aa55 : 0x555555);
-    }
+    display.draw_text(sx + SX_OFF, info_y, "WASD move", 0x666688); info_y += 16;
+    display.draw_text(sx + SX_OFF, info_y, "Arrows look", 0x666688); info_y += 16;
+    display.draw_text(sx + SX_OFF, info_y, "Q/E up/down", 0x666688); info_y += 16;
+    display.draw_text(sx + SX_OFF, info_y, "Space HQ", 0x666688); info_y += 16;
+    display.draw_text(sx + SX_OFF, info_y, "G ground  B mode", 0x666688); info_y += 16;
+    display.draw_text(sx + SX_OFF, info_y, "Esc quit", 0x666688);
 
     if (save_dialog_active_) {
         draw_save_dialog();
@@ -274,55 +386,39 @@ bool UI::handle_click(int mx, int my) {
 
     std::cerr << "CLICK at (" << mx << "," << my << ")" << std::endl;
 
-    if (my >= 45 && my < 45 + 28)
-        return try_place(ShapeType::SPHERE);
-    else if (my >= 80 && my < 80 + 28)
-        return try_place(ShapeType::BOX);
-    else if (my >= 115 && my < 115 + 28)
-        return try_place(ShapeType::CYLINDER);
-    else if (my >= 150 && my < 150 + 28)
-        return try_place(ShapeType::CONE);
-    else if (my >= 185 && my < 185 + 28)
-        return try_place(ShapeType::MESH);
-    else if (!mesh_files_.empty() && my >= 217 && my < 217 + 18) {
-        int sidebar_x = display.width() - MENU_W;
-        if (mx >= sidebar_x + 10 && mx < sidebar_x + 30) {
-            cycle_mesh(-1);
-            return true;
-        } else if (mx >= sidebar_x + 10 + 150 - 20 && mx < sidebar_x + 10 + 150) {
-            cycle_mesh(1);
+    BtnID id = button_at(mx, my);
+
+    switch (id) {
+        case BtnID::SPHERE:    return try_place(ShapeType::SPHERE);
+        case BtnID::BOX:       return try_place(ShapeType::BOX);
+        case BtnID::CYLINDER:  return try_place(ShapeType::CYLINDER);
+        case BtnID::CONE:      return try_place(ShapeType::CONE);
+        case BtnID::MESH:      return try_place(ShapeType::MESH);
+        case BtnID::MESH_PREV: cycle_mesh(-1); return true;
+        case BtnID::MESH_NEXT: cycle_mesh(1); return true;
+        case BtnID::CLEAR:     clear_grid(); return true;
+        case BtnID::SAVE:      open_save_dialog(); return true;
+        case BtnID::MODE:      mode_clicked_ = true; return false;
+        case BtnID::GROUND:    ground_clicked_ = true; return false;
+        case BtnID::TERRAIN: {
+            if (mesh_files_.empty()) {
+                std::cerr << "FAIL: no .obj files to load as terrain" << std::endl;
+                return true;
+            }
+            const std::string& path = mesh_files_[mesh_idx_];
+            Mesh* m = load_obj(path.c_str(), Vec3(0.3, 0.5, 0.25), Vec3(0, 0, 0), 1.0);
+            if (m) {
+                grid.set_terrain(m, path);
+                std::cerr << "Terrain set from " << path << std::endl;
+            } else {
+                std::cerr << "FAIL: could not load terrain from " << path << std::endl;
+            }
             return true;
         }
+        default:
+            std::cerr << "Menu click at y=" << my << " (no button)" << std::endl;
+            return false;
     }
-    else if (my >= 220 && my < 220 + 28) {
-        clear_grid();
-        return true;
-    } else if (my >= 255 && my < 255 + 28) {
-        open_save_dialog();
-        return true;
-    } else if (my >= 432 && my < 432 + 28) {
-        mode_clicked_ = true;
-        return false;
-    } else if (my >= 466 && my < 466 + 28) {
-        ground_clicked_ = true;
-        return false;
-    } else if (my >= 500 && my < 500 + 28) {
-        if (mesh_files_.empty()) {
-            std::cerr << "FAIL: no .obj files to load as terrain" << std::endl;
-            return true;
-        }
-        const std::string& path = mesh_files_[mesh_idx_];
-        Mesh* m = load_obj(path.c_str(), Vec3(0.3, 0.5, 0.25), Vec3(0, 0, 0), 1.0);
-        if (m) {
-            grid.set_terrain(m, path);
-            std::cerr << "Terrain set from " << path << std::endl;
-        } else {
-            std::cerr << "FAIL: could not load terrain from " << path << std::endl;
-        }
-        return true;
-    }
-    std::cerr << "Menu click at y=" << my << " (no button)" << std::endl;
-    return false;
 }
 
 void UI::open_save_dialog() {
