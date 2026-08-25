@@ -1,22 +1,22 @@
 #include "startscreen.hpp"
 #include <unistd.h>
-#include <dirent.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 std::vector<std::string> list_saves() {
     std::vector<std::string> saves;
-    DIR* dir = opendir("saves");
-    if (!dir) return saves;
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        std::string name = entry->d_name;
-        if (name.size() > 5 && name.substr(name.size() - 5) == ".r3do") {
-            saves.push_back(name.substr(0, name.size() - 5));
-        }
+    std::error_code ec;
+    if (!fs::exists("saves")) return saves;
+    for (const auto& entry : fs::directory_iterator("saves")) {
+        if (!entry.is_regular_file()) continue;
+        auto p = entry.path();
+        if (p.extension() == ".r3do")
+            saves.push_back(p.stem().string());
     }
-    closedir(dir);
     std::sort(saves.begin(), saves.end());
     return saves;
 }
@@ -33,8 +33,9 @@ StartAction show_start_screen(DisplayWin& display, Settings& settings) {
         display.process_events();
         if (display.is_closed()) return StartAction::QUIT;
 
-        int key = display.get_key();
-        display.clear_key();
+        int key;
+        char kc;
+        display.poll_key(key, kc);
         if (key == XK_Escape) return StartAction::QUIT;
 
         display.fill_rect(0, 0, w, h, 0x0d0d1a);
@@ -80,8 +81,9 @@ void show_settings_screen(DisplayWin& display, Settings& settings) {
         display.process_events();
         if (display.is_closed()) return;
 
-        int key = display.get_key();
-        display.clear_key();
+        int key;
+        char kc;
+        display.poll_key(key, kc);
         if (key == XK_Escape) return;
 
         display.fill_rect(0, 0, w, h, 0x0d0d1a);
@@ -139,8 +141,9 @@ std::string show_load_screen(DisplayWin& display) {
         display.process_events();
         if (display.is_closed()) return "";
 
-        int key = display.get_key();
-        display.clear_key();
+        int key;
+        char kc;
+        display.poll_key(key, kc);
         if (key == XK_Escape) return "";
 
         display.fill_rect(0, 0, w, h, 0x0d0d1a);

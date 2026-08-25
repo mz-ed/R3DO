@@ -11,7 +11,7 @@ public:
     
     double x, y, z;
     
-    Vec3(double x = 0, double y = 0, double z = 0) : x(x), y(y), z(z) {}    
+    Vec3(double x_ = 0, double y_ = 0, double z_ = 0) : x(x_), y(y_), z(z_) {}
         
     Vec3 operator -() const { return Vec3(-x, -y, -z); }
     

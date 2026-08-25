@@ -5,6 +5,9 @@
 #include "box.hpp"
 #include "mesh.hpp"
 #include "ray.hpp"
+#include <algorithm>
+#include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 #include <limits>
@@ -14,30 +17,25 @@ public:
     int nx, ny, nz;
     double cell_size;
     Vec3 origin;
-    std::vector<Hittable*> cells;
-    std::vector<Hittable*> free_objects_;
-    Mesh* terrain_ = nullptr;
+    std::vector<std::unique_ptr<Hittable>> cells;
+    std::vector<std::unique_ptr<Hittable>> free_objects_;
+    std::unique_ptr<Mesh> terrain_;
     std::string terrain_path_;
-    int visible_count_ = 0;
+    int visible_count_ = 0;   // visible cells + visible free objects
+    int cell_object_count_ = 0;
 
     static const int CHUNK_BITS = 2;
     static const int CHUNK_SIZE = 1 << CHUNK_BITS;
     int cnx, cny, cnz;
     std::vector<char> chunk_vis_;
 
-    Grid(int nx, int ny, int nz, double cell_size, const Vec3& origin)
-        : nx(nx), ny(ny), nz(nz), cell_size(cell_size), origin(origin) {
-        cells.resize(nx * ny * nz, nullptr);
+    Grid(int nx_, int ny_, int nz_, double cell_size_, const Vec3& origin_)
+        : nx(nx_), ny(ny_), nz(nz_), cell_size(cell_size_), origin(origin_) {
+        cells.resize(nx * ny * nz);
         cnx = (nx + CHUNK_SIZE - 1) >> CHUNK_BITS;
         cny = (ny + CHUNK_SIZE - 1) >> CHUNK_BITS;
         cnz = (nz + CHUNK_SIZE - 1) >> CHUNK_BITS;
         chunk_vis_.resize(cnx * cny * cnz, 0);
-    }
-
-    ~Grid() {
-        for (auto* c : cells) delete c;
-        for (auto* f : free_objects_) delete f;
-        delete terrain_;
     }
 
     int idx(int i, int j, int k) const {
@@ -48,32 +46,25 @@ public:
         return ci + cj * cnx + ck * cnx * cny;
     }
 
+    // Takes ownership of obj (may be nullptr). Deletes/replaces any occupant.
     void set(int i, int j, int k, Hittable* obj) {
         if (i >= 0 && i < nx && j >= 0 && j < ny && k >= 0 && k < nz) {
-            Hittable* old = cells[idx(i, j, k)];
-            if (old && old->is_visible()) visible_count_--;
-            if (obj && obj->is_visible()) visible_count_++;
-            delete old;
-            cells[idx(i, j, k)] = obj;
-            int ci = i >> CHUNK_BITS, cj = j >> CHUNK_BITS, ck = k >> CHUNK_BITS;
-            int cf = chunk_flat(ci, cj, ck);
-            chunk_vis_[cf] = 0;
-            int si = ci << CHUNK_BITS, ei = std::min(si + CHUNK_SIZE, nx);
-            int sj = cj << CHUNK_BITS, ej = std::min(sj + CHUNK_SIZE, ny);
-            int sk = ck << CHUNK_BITS, ek = std::min(sk + CHUNK_SIZE, nz);
-            for (int kk = sk; kk < ek; kk++)
-                for (int jj = sj; jj < ej; jj++)
-                    for (int ii = si; ii < ei; ii++) {
-                        Hittable* o = cells[idx(ii, jj, kk)];
-                        if (o && o->is_visible()) { chunk_vis_[cf] = 1; goto done; }
-                    }
-            done:;
+            auto& slot = cells[idx(i, j, k)];
+            if (slot) {
+                if (slot->is_visible()) visible_count_--;
+                cell_object_count_--;
+            }
+            if (obj && obj->is_visible()) { visible_count_++; cell_object_count_++; }
+            slot.reset(obj);
+            recompute_chunk(ci_of(i), cj_of(j), ck_of(k));
+        } else {
+            delete obj;  // never leak on out-of-range placement
         }
     }
 
     Hittable* get(int i, int j, int k) const {
         if (i >= 0 && i < nx && j >= 0 && j < ny && k >= 0 && k < nz)
-            return cells[idx(i, j, k)];
+            return cells[idx(i, j, k)].get();
         return nullptr;
     }
 
@@ -107,30 +98,47 @@ public:
     }
 
     bool has_visible() const { return visible_count_ > 0; }
+    int object_count() const { return cell_object_count_ + (int)free_objects_.size(); }
 
     void add_free(Hittable* obj) {
         if (obj) {
-            free_objects_.push_back(obj);
             if (obj->is_visible()) visible_count_++;
+            free_objects_.emplace_back(obj);
+        } else {
+            delete obj;
         }
     }
 
-    void remove_free(Hittable* obj) {
+    // Removes and destroys obj. Returns true if it was found.
+    bool remove_free(Hittable* obj) {
         for (auto it = free_objects_.begin(); it != free_objects_.end(); ++it) {
-            if (*it == obj) {
+            if (it->get() == obj) {
                 if (obj->is_visible()) visible_count_--;
                 free_objects_.erase(it);
-                return;
+                return true;
             }
         }
+        return false;
     }
 
-    const std::vector<Hittable*>& free_objects() const { return free_objects_; }
+    const std::vector<std::unique_ptr<Hittable>>& free_objects() const { return free_objects_; }
 
-    void set_terrain(Mesh* m, const std::string& path = "") { delete terrain_; terrain_ = m; terrain_path_ = path; }
-    Mesh* terrain() const { return terrain_; }
+    void set_terrain(Mesh* m, const std::string& path = "") { terrain_.reset(m); terrain_path_ = path; }
+    Mesh* terrain() const { return terrain_.get(); }
     const std::string& terrain_path() const { return terrain_path_; }
     bool has_terrain() const { return terrain_ && terrain_->is_visible(); }
+
+    // Bulk-clear everything in one pass instead of N^3 chunk rescans.
+    void clear(bool include_terrain = true) {
+        for (auto& c : cells) c.reset();
+        cell_object_count_ = 0;
+        for (auto& f : free_objects_) {
+            if (f->is_visible()) visible_count_--;
+        }
+        free_objects_.clear();
+        std::fill(chunk_vis_.begin(), chunk_vis_.end(), 0);
+        if (include_terrain) set_terrain(nullptr, "");
+    }
 
     double get_ground_height(double x, double z) const {
         if (!has_terrain()) {
@@ -154,11 +162,12 @@ public:
         int vis_free = 0;
 
         // Check free objects (big objects not tied to a single cell)
-        for (auto* f : free_objects_) {
-            if (f && f->is_visible()) {
+        for (const auto& f : free_objects_) {
+            Hittable* fp = f.get();
+            if (fp && fp->is_visible()) {
                 vis_free++;
-                if (f->hit(r, t_min, closest, temp_rec)) {
-                    temp_rec.hittable = f;
+                if (fp->hit(r, t_min, closest, temp_rec)) {
+                    temp_rec.hittable = fp;
                     rec = temp_rec;
                     closest = temp_rec.t;
                     hit_any = true;
@@ -260,7 +269,7 @@ public:
                 continue;
             }
 
-            Hittable* obj = cells[idx(cell_idx[0], cell_idx[1], cell_idx[2])];
+            Hittable* obj = cells[idx(cell_idx[0], cell_idx[1], cell_idx[2])].get();
             if (obj && obj->is_visible()) {
                 if (obj->hit(r, t_min, closest, temp_rec)) {
                     temp_rec.hittable = obj;
@@ -294,6 +303,25 @@ public:
         }
 
         return hit_any;
+    }
+
+private:
+    int ci_of(int i) const { return i >> CHUNK_BITS; }
+    int cj_of(int j) const { return j >> CHUNK_BITS; }
+    int ck_of(int k) const { return k >> CHUNK_BITS; }
+
+    void recompute_chunk(int ci, int cj, int ck) {
+        int cf = chunk_flat(ci, cj, ck);
+        chunk_vis_[cf] = 0;
+        int si = ci << CHUNK_BITS, ei = std::min(si + CHUNK_SIZE, nx);
+        int sj = cj << CHUNK_BITS, ej = std::min(sj + CHUNK_SIZE, ny);
+        int sk = ck << CHUNK_BITS, ek = std::min(sk + CHUNK_SIZE, nz);
+        for (int kk = sk; kk < ek; kk++)
+            for (int jj = sj; jj < ej; jj++)
+                for (int ii = si; ii < ei; ii++) {
+                    Hittable* o = cells[idx(ii, jj, kk)].get();
+                    if (o && o->is_visible()) { chunk_vis_[cf] = 1; return; }
+                }
     }
 };
 

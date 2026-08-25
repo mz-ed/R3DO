@@ -10,8 +10,8 @@ public:
     Vec3 min, max;
     Vec3 color;
 
-    Box(const Vec3& min, const Vec3& max, const Vec3& color)
-        : min(min), max(max), color(color) {}
+    Box(const Vec3& min_, const Vec3& max_, const Vec3& color_)
+        : min(min_), max(max_), color(color_) {}
 
     const char* type_name() const override { return "box"; }
     Vec3 get_color() const override { return color; }

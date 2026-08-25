@@ -3,6 +3,7 @@
 
 #include "v3.hpp"
 #include "ray.hpp"
+#include <string>
 
 struct HitRecord {
     Vec3 p;
@@ -27,6 +28,7 @@ public:
     virtual const char* type_name() const { return "unknown"; }
     virtual Vec3 get_color() const { return Vec3(0,0,0); }
     virtual Vec3 get_center() const { return Vec3(0,0,0); }
+    virtual std::string mesh_path() const { return ""; }
     bool is_visible() const { return visible_; }
     void set_visible(bool v) { visible_ = v; }
 };

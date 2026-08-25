@@ -10,8 +10,8 @@ public:
     double radius;
     Vec3 color;
 
-    Sphere(const Vec3& center, double radius, const Vec3& color)
-        : center(center), radius(radius), color(color) {}
+    Sphere(const Vec3& center_, double radius_, const Vec3& color_)
+        : center(center_), radius(radius_), color(color_) {}
 
     const char* type_name() const override { return "sphere"; }
     Vec3 get_color() const override { return color; }

@@ -11,8 +11,8 @@ public:
     double radius, height;
     Vec3 color;
 
-    Cone(const Vec3& center, double radius, double height, const Vec3& color)
-        : center(center), radius(radius), height(height), color(color) {}
+    Cone(const Vec3& center_, double radius_, double height_, const Vec3& color_)
+        : center(center_), radius(radius_), height(height_), color(color_) {}
 
     const char* type_name() const override { return "cone"; }
     Vec3 get_color() const override { return color; }

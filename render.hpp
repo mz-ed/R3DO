@@ -8,7 +8,10 @@
 #include "camera.hpp"
 #include "display.hpp"
 
-Vec3 ray_color(const Ray& r, const Grid& grid, const Vec3& light_dir);
+inline constexpr double VIEWPORT_HEIGHT = 2.5;
+inline constexpr double FOCAL_LENGTH = 2.0;
+
+Vec3 ray_color(const Ray& r, const Grid& grid, const Vec3& light);
 void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
                   int image_width, int image_height, int samples,
                   const Vec3& light_dir);
