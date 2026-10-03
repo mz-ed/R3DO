@@ -3,7 +3,7 @@ CXXFLAGS ?= -O2 -Wall -Wextra -Wshadow -std=c++17
 DEPFLAGS  = -MMD -MP
 LDFLAGS   = -lX11 -lXext -lpthread
 
-SRCS = main.cpp display.cpp render.cpp ui.cpp saver.cpp startscreen.cpp \
+SRCS = sculpt_mesh.cpp sculpt_engine.cpp sculpt_io.cpp sculpt_ui.cpp main.cpp display.cpp render.cpp ui.cpp saver.cpp startscreen.cpp \
        settings.cpp mesh.cpp obj_loader.cpp billboard.cpp overhead.cpp
 OBJS = $(SRCS:.cpp=.o)
 DEPS = $(OBJS:.o=.d)

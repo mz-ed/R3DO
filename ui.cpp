@@ -5,6 +5,7 @@
 #include "cylinder.hpp"
 #include "cone.hpp"
 #include "obj_loader.hpp"
+#include "sculpt_mesh.hpp"
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -33,6 +34,13 @@ void UI::build_sections() {
             {BtnID::CONE,      "/\\", "Cone"},
             {BtnID::MESH,      "M", "Mesh"},
         }},
+        {"Sculpt", {
+            {BtnID::SCULPT_ADD, "Add Sphere", "Add Sculpt Mesh"},
+            {BtnID::SCULPT_BRUSH_INC, "+R", "Brush Radius +"},
+            {BtnID::SCULPT_BRUSH_DEC, "-R", "Brush Radius -"},
+            {BtnID::SCULPT_STR_INC, "+S", "Strength +"},
+            {BtnID::SCULPT_STR_DEC, "-S", "Strength -"},
+        }},
         {"Actions", {
             {BtnID::CLEAR,     "X", "Clear All"},
             {BtnID::SAVE,      "S", "Save"},
@@ -46,9 +54,11 @@ void UI::build_sections() {
 }
 
 void UI::update_labels() {
-    static const char* mode_names[] = {"Raytrace", "Billboard", "Overhead"};
-    if (render_mode_ >= 0 && render_mode_ <= 2)
+    static const char* mode_names[] = {"Raytrace", "Billboard", "Overhead", "Sculpt"};
+    if (render_mode_ >= 0 && render_mode_ <= 3)
         mode_label_ = std::string("Mode: ") + mode_names[render_mode_];
+    else
+        mode_label_ = std::string("Mode: ") + mode_names[1];
     ground_label_ = ground_mode_ ? "Ground: ON" : "Ground: OFF";
     // Sections hold copies of the label strings — keep them in sync.
     for (auto& sec : sections_) {
@@ -267,7 +277,17 @@ bool UI::handle_click(int mx, int my) {
             show_msg("Scene cleared");
             return true;
         case BtnID::SAVE:      open_save_dialog(); return true;
-        case BtnID::MODE:      render_mode_ = (render_mode_ + 1) % 3; update_labels(); return true;
+        case BtnID::MODE:      render_mode_ = (render_mode_ + 1) % 4; update_labels(); return true;
+        case BtnID::SCULPT_ADD: {
+            // Add sphere sculpt mesh at origin of last pick? add at camera forward offset
+            SculptMesh* sm = SculptMesh::create_sphere(Vec3(0,0,0), 0.3, 16, 12, Vec3(0.8,0.7,0.5));
+            if (sm) { grid.add_free(sm); show_msg("Sculpt mesh added"); }
+            return true;
+        }
+        case BtnID::SCULPT_BRUSH_INC: show_msg("Brush +"); return true;
+        case BtnID::SCULPT_BRUSH_DEC: show_msg("Brush -"); return true;
+        case BtnID::SCULPT_STR_INC:   show_msg("Strength +"); return true;
+        case BtnID::SCULPT_STR_DEC:   show_msg("Strength -"); return true;
         case BtnID::GROUND:    toggle_ground_mode(); return true;
         case BtnID::TERRAIN: {
             if (mesh_files_.empty()) return true;

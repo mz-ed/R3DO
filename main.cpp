@@ -11,6 +11,8 @@
 #include "settings.hpp"
 #include "billboard.hpp"
 #include "overhead.hpp"
+#include "sculpt_engine.hpp"
+#include "sculpt_mesh.hpp"
 #include <iostream>
 #include <cmath>
 #include <chrono>
@@ -33,6 +35,8 @@ bool blocked_at(const Grid& grid, const Vec3& p) {
 void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 const Settings& settings) {
     UI ui(grid, cam, display);
+    SculptEngine sculpt;
+    sculpt.set_active(nullptr);
     const Vec3 light_dir(settings.light_x, settings.light_y, settings.light_z);
     const char* SAVE_PATH = "saves/default.r3do";
 
@@ -43,7 +47,8 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                          samples > 0 ? samples : settings.lq_samples, light_dir);
             break;
         case 1: render_billboard(grid, cam, display, light_dir); break;
-        default: render_overhead(grid, cam, display); break;
+        case 2: render_overhead(grid, cam, display); break;
+        default: render_billboard(grid, cam, display, light_dir); break;
         }
     };
 
@@ -117,15 +122,35 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             }
         }
 
+        // Begin sculpt stroke
+        static bool sculpt_stroke_active = false;
+        if (ui.render_mode() == 3 && display.is_mouse_down() && display.mouse_button() == 1 && !sculpt_stroke_active) {
+            sculpt.begin_stroke();
+            sculpt_stroke_active = true;
+        }
+        if (!(ui.render_mode() == 3 && display.is_mouse_down() && display.mouse_button() == 1)) {
+            if (sculpt_stroke_active) { sculpt.end_stroke(); sculpt_stroke_active = false; }
+        }
+
         // --- Drag look ---
         if (display.is_mouse_down() &&
             display.mouse_press_x() < display.width() - UI::SIDEBAR_W) {
-            int dx = display.mouse_dx();
-            int dy = display.mouse_dy();
-            if (dx != 0 || dy != 0) {
-                display.clear_mouse_delta();
-                cam.rotate(-dx * MOUSE_SENS, dy * MOUSE_SENS);
+            // Sculpt mode: left button strokes
+            if (ui.render_mode() == 3 && display.mouse_button() == 1) {
+                Brush b;
+                b.radius = 0.3f; b.strength = 0.2f; b.type = BrushType::Draw;
+                sculpt.stroke_update(cam, display.width(), display.height(),
+                                     display.mouse_x(), display.mouse_y(), b, true);
                 render_and_ui();
+                display.clear_mouse_delta();
+            } else {
+                int dx = display.mouse_dx();
+                int dy = display.mouse_dy();
+                if (dx != 0 || dy != 0) {
+                    display.clear_mouse_delta();
+                    cam.rotate(-dx * MOUSE_SENS, dy * MOUSE_SENS);
+                    render_and_ui();
+                }
             }
         }
 
@@ -196,7 +221,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     render_and_ui();
                     break;
                 case XK_b: case XK_B:
-                    ui.set_render_mode((ui.render_mode() + 1) % 3);
+                    ui.set_render_mode((ui.render_mode() + 1) % 4);
                     render_and_ui();
                     break;
                 case XK_space:
@@ -216,9 +241,20 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     break;
                 default:
                     if (ctrl_held && (key == XK_z || key == XK_Z)) {
+                        if (ui.render_mode() == 3) {
+                            sculpt.undo();
+                            render_and_ui();
+                            break;
+                        }
                         if (ui.undo()) {
                             autosave();
                             render_and_ui();
+                        }
+                    } else if (ctrl_held && (key == XK_y || key == XK_Y)) {
+                        if (ui.render_mode() == 3) {
+                            sculpt.redo();
+                            render_and_ui();
+                            break;
                         }
                     }
                     break;
