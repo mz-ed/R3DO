@@ -274,3 +274,18 @@ void DisplayWin::toggle_fullscreen() {
     XSendEvent(d, DefaultRootWindow(d), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
     XFlush(d);
 }
+
+void DisplayWin::grab_pointer() {
+    if (!d || !w) return;
+    XGrabPointer(d, w, True,
+                 ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+                 GrabModeAsync, GrabModeAsync,
+                 w, None, CurrentTime);
+    XFlush(d);
+}
+
+void DisplayWin::ungrab_pointer() {
+    if (!d) return;
+    XUngrabPointer(d, CurrentTime);
+    XFlush(d);
+}

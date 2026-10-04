@@ -25,9 +25,10 @@ StartAction show_start_screen(DisplayWin& display, Settings& settings) {
     int w = display.width(), h = display.height();
     const int bw = 220, bh = 44;
     const int bx = (w - bw) / 2;
-    const int by_new = h / 2 - 60;
+    const int by_new = h / 2 - 80;
     const int by_load = by_new + bh + 10;
-    const int by_settings = by_load + bh + 10;
+    const int by_sculpt = by_load + bh + 10;
+    const int by_settings = by_sculpt + bh + 10;
 
     while (true) {
         display.process_events();
@@ -51,6 +52,7 @@ StartAction show_start_screen(DisplayWin& display, Settings& settings) {
 
         draw_btn(by_new, "New Scene", 55);
         draw_btn(by_load, "Load Scene", 50);
+        draw_btn(by_sculpt, "Sculpt", 65);
         draw_btn(by_settings, "Settings", 65);
 
         display.draw_text(w/2 - 100, h - 30, "F11 fullscreen  |  Esc to quit", 0x444466);
@@ -64,6 +66,8 @@ StartAction show_start_screen(DisplayWin& display, Settings& settings) {
                 return StartAction::NEW_SCENE;
             if (mx >= bx && mx < bx + bw && my >= by_load && my < by_load + bh)
                 return StartAction::LOAD_SCENE;
+            if (mx >= bx && mx < bx + bw && my >= by_sculpt && my < by_sculpt + bh)
+                return StartAction::SCULPT;
             if (mx >= bx && mx < bx + bw && my >= by_settings && my < by_settings + bh)
                 show_settings_screen(display, settings);
         }

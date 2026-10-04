@@ -54,7 +54,7 @@ void UI::build_sections() {
 }
 
 void UI::update_labels() {
-    static const char* mode_names[] = {"Raytrace", "Billboard", "Overhead", "Sculpt"};
+    static const char* mode_names[] = {"Raytrace", "Billboard", "Overhead", "Sculpt", "Static"};
     if (render_mode_ >= 0 && render_mode_ <= 3)
         mode_label_ = std::string("Mode: ") + mode_names[render_mode_];
     else

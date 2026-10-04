@@ -35,6 +35,7 @@ bool blocked_at(const Grid& grid, const Vec3& p) {
 void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 const Settings& settings) {
     UI ui(grid, cam, display);
+    bool mouse_captured = false;
     SculptEngine sculpt;
     sculpt.set_active(nullptr);
     const Vec3 light_dir(settings.light_x, settings.light_y, settings.light_z);
@@ -48,6 +49,25 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             break;
         case 1: render_billboard(grid, cam, display, light_dir); break;
         case 2: render_overhead(grid, cam, display); break;
+        case 3: render_scene(grid, cam, display, display.width(), display.height(),
+                         samples > 0 ? samples : settings.lq_samples, light_dir);
+            break;
+        case 4: {
+            // Static rendering: each pixel gets a fixed color, no ray casting
+            int w = display.width();
+            int h = display.height();
+            for (int j = 0; j < h; j++) {
+                for (int i = 0; i < w; i++) {
+                    // Fixed color pattern: gradient based on pixel position
+                    unsigned int c = ((unsigned)(i * 255 / w) << 16) |
+                                    ((unsigned)(j * 255 / h) << 8) |
+                                    (unsigned)(128);
+                    display.set_pixel(i, j, c);
+                }
+            }
+            display.update();
+            break;
+        }
         default: render_billboard(grid, cam, display, light_dir); break;
         }
     };
@@ -221,7 +241,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     render_and_ui();
                     break;
                 case XK_b: case XK_B:
-                    ui.set_render_mode((ui.render_mode() + 1) % 4);
+                    ui.set_render_mode((ui.render_mode() + 1) % 5);
                     render_and_ui();
                     break;
                 case XK_space:
@@ -238,6 +258,12 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     break;
                 case XK_Escape:
                     running = false;
+                    break;
+                case XK_Shift_L:
+                case XK_Shift_R:
+                case XK_Alt_L:
+                case XK_Alt_R:
+                    // allow toggle check? defer
                     break;
                 default:
                     if (ctrl_held && (key == XK_z || key == XK_Z)) {
@@ -260,6 +286,23 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     break;
             }
             if (!running) break;
+        }
+
+        // Toggle mouse capture with Alt+Shift
+        {
+            bool alt_held = display.key_held(XK_Alt_L) || display.key_held(XK_Alt_R);
+            bool shift_held = display.key_held(XK_Shift_L) || display.key_held(XK_Shift_R);
+            static bool last_toggle = false;
+            bool both = alt_held && shift_held;
+            if (both && !last_toggle) {
+                mouse_captured = !mouse_captured;
+                if (mouse_captured)
+                    display.grab_pointer();
+                else
+                    display.ungrab_pointer();
+                last_toggle = true;
+            }
+            if (!both) last_toggle = false;
         }
 
         // --- Continuous movement (held keys, delta-time) ---
@@ -353,13 +396,25 @@ int main() {
 
         if (action == StartAction::NEW_SCENE) {
             grid.clear();
+            run_editor(grid, cam, display, settings);
+        } else if (action == StartAction::SCULPT) {
+            grid.clear();
+            UI ui(grid, cam, display);
+            SculptEngine sculpt;
+            // Create a default sculpt mesh
+            SculptMesh* sm = SculptMesh::create_sphere(Vec3(0,0,0), 0.4, 16, 12, Vec3(0.8,0.7,0.5));
+            if (sm) grid.add_free(sm);
+            sculpt.set_active(sm);
+            // Run a simplified sculpt-only session
+            ui.set_render_mode(3);
+            run_editor(grid, cam, display, settings);
         } else {
             std::string name = show_load_screen(display);
             if (name.empty() || display.is_closed()) continue;
             load_scene("saves/" + name + ".r3do", grid, &cam);
+            run_editor(grid, cam, display, settings);
         }
 
-        run_editor(grid, cam, display, settings);
         if (display.is_closed()) return 0;
     }
 }

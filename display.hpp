@@ -74,6 +74,11 @@ public:
     bool is_fullscreen() const { return fullscreen_; }
     void toggle_fullscreen();
     void resize(int new_w, int new_h);
+
+    Display* xdisplay() const { return d; }
+    Window xwindow() const { return w; }
+    void grab_pointer();
+    void ungrab_pointer();
 };
 
 #endif

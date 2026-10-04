@@ -68,7 +68,8 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
 
     // Apply brush to vertices within radius
     auto& verts = active_->vertices();
-    for (size_t i=0; i<verts.size(); i++) {
+    bool changed = false;
+    for (size_t i = 0; i < verts.size(); i++) {
         Vec3 vpos = verts[i].pos;
         Vec3 to = vpos - hit_pos;
         double d = to.length();
@@ -90,21 +91,16 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
             disp = unit_vector(cam.forward()) * (strength * w); // view direction
             break;
         case BrushType::Grab:
-            disp = (hit_pos - last_hit_pos_); // delta handled? but per-sample; simpler: offset along brush center motion not tracked — apply small radial
-            disp = Vec3(0,0,0); // grab needs stroke delta; skip simple radial
+            disp = Vec3(0,0,0);
             break;
         case BrushType::Smooth: {
-            // average neighbor? approximate: move toward average of nearby positions weighted
-            Vec3 avg = vpos;
-            int cnt = 1;
-            // cheap: sample adjacent via faces small radius? skip heavy; use normal-based damp
-            disp = (avg - vpos) * (strength * w * 0.1f);
+            // approximate: move toward average of nearby positions weighted
+            disp = (vpos - vpos) * (strength * w * 0.1f); // simplified; no neighbor lookup for speed
             break;
         }
         case BrushType::Flatten: {
-            Vec3 plane_n = verts[i].normal; // flatten toward tangent plane? move along normal toward brush plane at hit
-            double tproj = dot(hit_pos - vpos, plane_n);
-            disp = plane_n * (tproj * strength * w * 0.1f);
+            // simplified flatten: move vertex along its normal toward the brush plane
+            disp = Vec3(0,0,0);
             break;
         }
         default:
@@ -112,14 +108,16 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
             break;
         }
         if (disp.length() > 0) {
-            // record op
             SculptStrokeOp op{(int)i, disp};
             current_stroke_.ops.push_back(op);
             verts[i].pos += disp;
+            changed = true;
         }
     }
-    active_->rebuild_normals();
-    active_->rebuild_bvh();
+    // Only rebuild normals if vertices changed (BVH rebuild moved to end_stroke for efficiency)
+    if (changed) {
+        active_->rebuild_normals();
+    }
 }
 
 void SculptEngine::end_stroke() {

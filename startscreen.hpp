@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-enum class StartAction { NEW_SCENE, LOAD_SCENE, QUIT };
+enum class StartAction { NEW_SCENE, LOAD_SCENE, SCULPT, QUIT };
 
 std::vector<std::string> list_saves();
 StartAction show_start_screen(DisplayWin& display, Settings& settings);
