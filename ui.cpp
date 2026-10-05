@@ -19,8 +19,8 @@ static double now_s() {
         std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-UI::UI(Grid& g, Camera& c, DisplayWin& dsp)
-    : grid(g), cam(c), display(dsp) {
+UI::UI(Grid& g, Camera& c, DisplayWin& dsp, SculptEngine* sculpt)
+    : grid(g), cam(c), display(dsp), sculpt_(sculpt) {
     scan_meshes();
     build_sections();
 }
@@ -277,17 +277,45 @@ bool UI::handle_click(int mx, int my) {
             show_msg("Scene cleared");
             return true;
         case BtnID::SAVE:      open_save_dialog(); return true;
-        case BtnID::MODE:      render_mode_ = (render_mode_ + 1) % 4; update_labels(); return true;
+        case BtnID::MODE:      render_mode_ = (render_mode_ + 1) % 5; update_labels(); return true;
         case BtnID::SCULPT_ADD: {
             // Add sphere sculpt mesh at origin of last pick? add at camera forward offset
-            SculptMesh* sm = SculptMesh::create_sphere(Vec3(0,0,0), 0.3, 16, 12, Vec3(0.8,0.7,0.5));
-            if (sm) { grid.add_free(sm); show_msg("Sculpt mesh added"); }
+            SculptMesh* sm = SculptMesh::create_sphere(Vec3(0,0,0), 0.4, 16, 12, Vec3(0.8,0.7,0.5));
+            if (sm) {
+                grid.add_free(sm);
+                if (sculpt_) sculpt_->set_active(sm);
+                show_msg("Sculpt mesh added");
+            }
             return true;
         }
-        case BtnID::SCULPT_BRUSH_INC: show_msg("Brush +"); return true;
-        case BtnID::SCULPT_BRUSH_DEC: show_msg("Brush -"); return true;
-        case BtnID::SCULPT_STR_INC:   show_msg("Strength +"); return true;
-        case BtnID::SCULPT_STR_DEC:   show_msg("Strength -"); return true;
+        case BtnID::SCULPT_BRUSH_INC: {
+            brush_radius_ += 0.05f;
+            if (brush_radius_ > 2.0f) brush_radius_ = 2.0f;
+            char buf[64]; snprintf(buf, sizeof(buf), "Radius: %.2f", brush_radius_);
+            show_msg(buf);
+            return true;
+        }
+        case BtnID::SCULPT_BRUSH_DEC: {
+            brush_radius_ -= 0.05f;
+            if (brush_radius_ < 0.05f) brush_radius_ = 0.05f;
+            char buf[64]; snprintf(buf, sizeof(buf), "Radius: %.2f", brush_radius_);
+            show_msg(buf);
+            return true;
+        }
+        case BtnID::SCULPT_STR_INC: {
+            brush_strength_ += 0.05f;
+            if (brush_strength_ > 2.0f) brush_strength_ = 2.0f;
+            char buf[64]; snprintf(buf, sizeof(buf), "Strength: %.2f", brush_strength_);
+            show_msg(buf);
+            return true;
+        }
+        case BtnID::SCULPT_STR_DEC: {
+            brush_strength_ -= 0.05f;
+            if (brush_strength_ < 0.05f) brush_strength_ = 0.05f;
+            char buf[64]; snprintf(buf, sizeof(buf), "Strength: %.2f", brush_strength_);
+            show_msg(buf);
+            return true;
+        }
         case BtnID::GROUND:    toggle_ground_mode(); return true;
         case BtnID::TERRAIN: {
             if (mesh_files_.empty()) return true;
@@ -448,7 +476,7 @@ void UI::draw() {
     }
 
     // Terrain status (below terrain btn)
-    int terrain_by = button_y(2, 2);
+    int terrain_by = button_y(3, 2);
     int status_y = terrain_by + BTN_H + BTN_GAP + 4;
     {
         char tbuf[64];

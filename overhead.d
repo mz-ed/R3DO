@@ -1,5 +1,6 @@
 overhead.o: overhead.cpp overhead.hpp grid.hpp hittable.hpp v3.hpp \
- ray.hpp box.hpp mesh.hpp camera.hpp display.hpp ui.hpp
+ ray.hpp box.hpp mesh.hpp camera.hpp display.hpp ui.hpp sculpt_engine.hpp \
+ sculpt_mesh.hpp brush.hpp
 overhead.hpp:
 grid.hpp:
 hittable.hpp:
@@ -10,3 +11,6 @@ mesh.hpp:
 camera.hpp:
 display.hpp:
 ui.hpp:
+sculpt_engine.hpp:
+sculpt_mesh.hpp:
+brush.hpp:

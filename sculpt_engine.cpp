@@ -57,18 +57,27 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
     Vec3 hit_pos; int hv; double hd;
     if (!pick_active(cam, img_w, img_h, sx, sy, hit_pos, hv, hd)) {
         has_last_hit_ = false;
+        grab_active_ = false;
+        last_sx_ = sx; last_sy_ = sy;
         return;
     }
     last_hit_pos_ = hit_pos; has_last_hit_ = true; last_radius_used_ = brush.radius;
+    last_sx_ = sx; last_sy_ = sy;
 
     float radius = brush.radius;
     float strength = brush.strength;
     if (brush.invert) strength *= -1.0f;
-    if (!is_additive) strength *= -0.5f; // LMB vs RMB behavior? treat additive true if push in direction
+    if (!is_additive) strength *= -0.5f;
 
-    // Apply brush to vertices within radius
     auto& verts = active_->vertices();
     bool changed = false;
+    
+    // For Grab brush, track initial state
+    if (brush.type == BrushType::Grab && !grab_active_) {
+        grab_active_ = true;
+        grab_center_ = hit_pos;
+    }
+    
     for (size_t i = 0; i < verts.size(); i++) {
         Vec3 vpos = verts[i].pos;
         Vec3 to = vpos - hit_pos;
@@ -88,37 +97,114 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
             disp = -verts[i].normal * (strength * w);
             break;
         case BrushType::PushPull:
-            disp = unit_vector(cam.forward()) * (strength * w); // view direction
+            disp = unit_vector(cam.forward()) * (strength * w);
             break;
         case BrushType::Grab:
-            disp = Vec3(0,0,0);
+            // Simple grab: translate vertices along the movement of hit point
+            if (has_last_hit_) {
+                // Use the delta from when grab started? Or simpler approximation
+                disp = ((hit_pos - last_hit_pos_).length() > 1e-8 ? (hit_pos - last_hit_pos_) : Vec3(0,0,0));
+                disp = disp * strength * w * 0.5f;
+            }
             break;
         case BrushType::Smooth: {
-            // approximate: move toward average of nearby positions weighted
-            disp = (vpos - vpos) * (strength * w * 0.1f); // simplified; no neighbor lookup for speed
+            // Average positions of adjacent vertices
+            Vec3 avg(0,0,0);
+            int cnt = 0;
+            const auto& adj = active_->adj_faces();
+            if (i < adj.size()) {
+                // Collect unique neighbor vertex positions
+                // For each adjacent face, get the other 2 verts
+                for (int fi : adj[i]) {
+                    const auto& f = active_->faces()[fi];
+                    int nv[3] = {f.v0, f.v1, f.v2};
+                    for (int j = 0; j < 3; j++) {
+                        if (nv[j] != (int)i && nv[j] >= 0 && nv[j] < (int)verts.size()) {
+                            avg += verts[nv[j]].pos;
+                            cnt++;
+                        }
+                    }
+                }
+            }
+            if (cnt > 0) {
+                avg = avg / (double)cnt;
+                disp = (avg - vpos) * (strength * w);
+            }
             break;
         }
         case BrushType::Flatten: {
-            // simplified flatten: move vertex along its normal toward the brush plane
-            disp = Vec3(0,0,0);
+            // Compute average plane center and normal of vertices in radius
+            Vec3 c(0,0,0), n(0,0,0);
+            int k = 0;
+            for (size_t j = 0; j < verts.size(); j++) {
+                double dj = (verts[j].pos - hit_pos).length();
+                if (dj <= radius) {
+                    c += verts[j].pos;
+                    n += verts[j].normal;
+                    k++;
+                }
+            }
+            if (k > 0) {
+                c = c / (double)k;
+                n = unit_vector(n / (double)k);
+                // Project vertex onto plane (along normal direction)
+                double dist_to_plane = dot(vpos - c, n);
+                disp = -n * dist_to_plane * (strength * w);
+            }
             break;
         }
         default:
             disp = verts[i].normal * (strength * w * 0.5f);
             break;
         }
-        if (disp.length() > 0) {
+        if (disp.length_sq() > 1e-12) {
             SculptStrokeOp op{(int)i, disp};
             current_stroke_.ops.push_back(op);
             verts[i].pos += disp;
             changed = true;
+            // Apply mirror symmetry
+            if (brush.mirror_x || brush.mirror_y || brush.mirror_z) {
+                Vec3 orig_pos = vpos;
+                Vec3 mir_pos = orig_pos;
+                if (brush.mirror_x) mir_pos.x = -orig_pos.x;
+                if (brush.mirror_y) mir_pos.y = -orig_pos.y;
+                if (brush.mirror_z) mir_pos.z = -orig_pos.z;
+                // Find closest vertex to mirrored position
+                double bestd = 1e-3; // small threshold
+                int bestv = -1;
+                for (size_t j = 0; j < verts.size(); j++) {
+                    if ((int)j == (int)i) continue;
+                    Vec3 mp = verts[j].pos;
+                    Vec3 t = mp;
+                    if (brush.mirror_x) t.x = -mp.x;
+                    if (brush.mirror_y) t.y = -mp.y;
+                    if (brush.mirror_z) t.z = -mp.z;
+                    // Check if this vertex maps to near orig_pos under mirror?
+                    double d = (t - orig_pos).length();
+                    if (d < bestd) {
+                        bestd = d;
+                        bestv = (int)j;
+                    }
+                }
+                if (bestv >= 0) {
+                    Vec3 mir_disp = disp;
+                    if (brush.mirror_x) mir_disp.x = -disp.x;
+                    if (brush.mirror_y) mir_disp.y = -disp.y;
+                    if (brush.mirror_z) mir_disp.z = -disp.z;
+                    SculptStrokeOp op2{bestv, mir_disp};
+                    current_stroke_.ops.push_back(op2);
+                    verts[bestv].pos += mir_disp;
+                    changed = true;
+                }
+            }
         }
     }
-    // Only rebuild normals if vertices changed (BVH rebuild moved to end_stroke for efficiency)
     if (changed) {
         active_->rebuild_normals();
+        active_->rebuild_bvh();
     }
 }
+
 
 void SculptEngine::end_stroke() {
     if (!current_stroke_.ops.empty()) {

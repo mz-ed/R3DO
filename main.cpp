@@ -34,9 +34,9 @@ bool blocked_at(const Grid& grid, const Vec3& p) {
 
 void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 const Settings& settings) {
-    UI ui(grid, cam, display);
-    bool mouse_captured = false;
     SculptEngine sculpt;
+    UI ui(grid, cam, display, &sculpt);
+    bool mouse_captured = false;
     sculpt.set_active(nullptr);
     const Vec3 light_dir(settings.light_x, settings.light_y, settings.light_z);
     const char* SAVE_PATH = "saves/default.r3do";
@@ -158,7 +158,9 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             // Sculpt mode: left button strokes
             if (ui.render_mode() == 3 && display.mouse_button() == 1) {
                 Brush b;
-                b.radius = 0.3f; b.strength = 0.2f; b.type = BrushType::Draw;
+                b.radius = ui.brush_radius();
+                b.strength = ui.brush_strength();
+                b.type = BrushType::Draw;
                 sculpt.stroke_update(cam, display.width(), display.height(),
                                      display.mouse_x(), display.mouse_y(), b, true);
                 render_and_ui();
@@ -399,8 +401,8 @@ int main() {
             run_editor(grid, cam, display, settings);
         } else if (action == StartAction::SCULPT) {
             grid.clear();
-            UI ui(grid, cam, display);
             SculptEngine sculpt;
+            UI ui(grid, cam, display, &sculpt);
             // Create a default sculpt mesh
             SculptMesh* sm = SculptMesh::create_sphere(Vec3(0,0,0), 0.4, 16, 12, Vec3(0.8,0.7,0.5));
             if (sm) grid.add_free(sm);

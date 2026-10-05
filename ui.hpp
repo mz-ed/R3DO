@@ -5,6 +5,7 @@
 #include "grid.hpp"
 #include "camera.hpp"
 #include "display.hpp"
+#include "sculpt_engine.hpp"
 #include <X11/keysym.h>
 #include <string>
 #include <vector>
@@ -24,7 +25,9 @@ class UI {
 public:
     static const int SIDEBAR_W = 170;
 
-    UI(Grid& grid, Camera& cam, DisplayWin& display);
+    UI(Grid& grid, Camera& cam, DisplayWin& display, SculptEngine* sculpt = nullptr);
+
+    void set_sculpt_engine(SculptEngine* s) { sculpt_ = s; }
 
     // --- state accessors ---
     bool ground_mode() const { return ground_mode_; }
@@ -32,6 +35,8 @@ public:
     int render_mode() const { return render_mode_; }
     void set_render_mode(int m) { render_mode_ = m; update_labels(); }
     int palette_idx() const { return palette_idx_; }
+    float brush_radius() const { return brush_radius_; }
+    float brush_strength() const { return brush_strength_; }
 
     void draw();
     bool handle_click(int mx, int my);
@@ -48,6 +53,7 @@ private:
     Grid& grid;
     Camera& cam;
     DisplayWin& display;
+    SculptEngine* sculpt_ = nullptr;
 
     static const int BTN_H = 27;
     static const int BTN_GAP = 3;
@@ -71,6 +77,9 @@ private:
     ShapeType last_shape_ = ShapeType::SPHERE;
     int render_mode_ = 1;
     bool ground_mode_ = false;
+    float brush_radius_ = 0.3f;
+    float brush_strength_ = 0.2f;
+    BrushType brush_type_ = BrushType::Draw;
     std::string mode_label_ = "Mode: Billboard";
     std::string ground_label_ = "Ground: OFF";
 

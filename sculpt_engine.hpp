@@ -44,8 +44,10 @@ private:
     Vec3 last_hit_pos_;
     bool has_last_hit_ = false;
     float last_radius_used_ = 0.0f;
-
-    Vec3 get_normal_averaged(int v) const;
+    Vec3 grab_center_;
+    Vec3 grab_hit_offset_;
+    bool grab_active_ = false;
+    double last_sx_ = 0, last_sy_ = 0;
 };
 
 #endif

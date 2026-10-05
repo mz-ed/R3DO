@@ -59,6 +59,8 @@ public:
     bool export_obj(const std::string& filename) const;
     void translate(const Vec3& delta);
 
+    const std::vector<std::vector<int>>& adj_faces() const { return adj_faces_; }
+
 private:
     std::vector<SculptVertex> verts_;
     std::vector<SculptTriangle> faces_;

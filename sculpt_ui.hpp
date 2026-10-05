@@ -18,6 +18,7 @@ struct SculptUIState {
     SculptMesh* selected = nullptr;
     std::string export_path = "sculpt_export.obj";
     std::string sculpt_save_path = "saves/sculpt_test.sculpt";
+    void reset();
 };
 
 #endif

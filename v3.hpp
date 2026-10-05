@@ -22,7 +22,8 @@ public:
     double& operator[](int i) { return i == 0 ? x : (i == 1 ? y : z); }
     
     double length() const { return std::sqrt(x*x + y*y + z*z); }
-
+    double length_sq() const { return x*x + y*y + z*z; }
+    double dot(const Vec3& v) const { return x*v.x + y*v.y + z*v.z; }
 };
 
 // Utility functions for vector math
