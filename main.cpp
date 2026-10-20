@@ -13,6 +13,8 @@
 #include "overhead.hpp"
 #include "sculpt_engine.hpp"
 #include "sculpt_mesh.hpp"
+#include "animation.hpp"
+#include "anim_ui.hpp"
 #include <iostream>
 #include <cmath>
 #include <chrono>
@@ -36,6 +38,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 const Settings& settings) {
     SculptEngine sculpt;
     UI ui(grid, cam, display, &sculpt);
+    AnimUI anim_ui(display);
     bool mouse_captured = false;
     sculpt.set_active(nullptr);
     const Vec3 light_dir(settings.light_x, settings.light_y, settings.light_z);
@@ -75,6 +78,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     auto render_and_ui = [&]() {
         render(0);
         ui.draw();
+        if (anim_ui.visible) anim_ui.draw();
         display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
     };
 
@@ -93,7 +97,8 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     while (running) {
         bool animating = display.is_mouse_down() ||
                          (ui.ground_mode() && !on_ground) ||
-                         ui.is_save_dialog_active();
+                         ui.is_save_dialog_active() ||
+                         anim_ui.playing();
         if (!animating)
             display.wait_event(50);
         display.process_events();
@@ -104,6 +109,26 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         double dt = std::chrono::duration<double>(now - last_frame).count();
         last_frame = now;
         if (dt > 0.05 || dt <= 0) dt = 0.05;
+
+        // Animation tick
+        if (anim_ui.playing()) {
+            anim_ui.animator().update((float)dt);
+            // Apply animation to free objects
+            auto& clips = anim_ui.animator().clips;
+            for (auto& ci : clips) {
+                if (ci.target.type == AnimTarget::FREE_OBJECT) {
+                    auto& fobjs = grid.free_objects();
+                    if (ci.target.free_idx >= 0 && ci.target.free_idx < (int)fobjs.size()) {
+                        Hittable* obj = fobjs[ci.target.free_idx].get();
+                        if (obj) {
+                            Vec3 pos = ci.clip.evaluate(AnimProperty::Position, ci.current_time);
+                            obj->set_anim_offset(pos);
+                        }
+                    }
+                }
+            }
+            render_and_ui();
+        }
 
         // --- Save dialog: modal key + click handling ---
         if (ui.is_save_dialog_active()) {
@@ -128,7 +153,11 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             int mx = display.mouse_x(), my = display.mouse_y();
             int btn = display.mouse_button();
             display.clear_mouse();
-            if (mx >= display.width() - UI::SIDEBAR_W) {
+            if (anim_ui.visible && mx < anim_ui.panel_x() + 280) {
+                if (anim_ui.handle_click(mx, my)) {
+                    render_and_ui();
+                }
+            } else if (mx >= display.width() - UI::SIDEBAR_W) {
                 if (ui.handle_click(mx, my)) {
                     autosave();
                     render_and_ui();
@@ -144,23 +173,25 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
 
         // Begin sculpt stroke
         static bool sculpt_stroke_active = false;
-        if (ui.render_mode() == 3 && display.is_mouse_down() && display.mouse_button() == 1 && !sculpt_stroke_active) {
+        bool sculpt_mouse_down = (display.mouse_button() == 1 || display.mouse_button() == 3);
+        if (ui.render_mode() == 3 && display.is_mouse_down() && sculpt_mouse_down && !sculpt_stroke_active) {
             sculpt.begin_stroke();
             sculpt_stroke_active = true;
         }
-        if (!(ui.render_mode() == 3 && display.is_mouse_down() && display.mouse_button() == 1)) {
+        if (!(ui.render_mode() == 3 && display.is_mouse_down() && sculpt_mouse_down)) {
             if (sculpt_stroke_active) { sculpt.end_stroke(); sculpt_stroke_active = false; }
         }
 
         // --- Drag look ---
         if (display.is_mouse_down() &&
             display.mouse_press_x() < display.width() - UI::SIDEBAR_W) {
-            // Sculpt mode: left button strokes
-            if (ui.render_mode() == 3 && display.mouse_button() == 1) {
+            // Sculpt mode: LMB or RMB strokes
+            if (ui.render_mode() == 3 && sculpt_mouse_down) {
                 Brush b;
                 b.radius = ui.brush_radius();
                 b.strength = ui.brush_strength();
-                b.type = BrushType::Draw;
+                b.type = ui.brush_type();
+                b.invert = ui.brush_invert() || display.mouse_button() == 3; // RMB also inverts
                 sculpt.stroke_update(cam, display.width(), display.height(),
                                      display.mouse_x(), display.mouse_y(), b, true);
                 render_and_ui();
@@ -177,7 +208,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         }
 
         // --- Click-to-delete ---
-        if (display.mouse_released()) {
+        if (display.mouse_released() && ui.render_mode() != 3) {
             display.clear_mouse_released();
             if (display.mouse_button() == 1 &&
                 display.mouse_press_x() < display.width() - UI::SIDEBAR_W) {
@@ -227,6 +258,11 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         int key;
         char kc;
         while (display.poll_key(key, kc)) {
+            if (anim_ui.visible && anim_ui.key_dialog_open()) {
+                anim_ui.handle_key(key);
+                render_and_ui();
+                continue;
+            }
             switch (key) {
                 case XK_F11:
                     display.toggle_fullscreen();
@@ -244,6 +280,10 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     break;
                 case XK_b: case XK_B:
                     ui.set_render_mode((ui.render_mode() + 1) % 5);
+                    render_and_ui();
+                    break;
+                case XK_t: case XK_T:
+                    anim_ui.visible = !anim_ui.visible;
                     render_and_ui();
                     break;
                 case XK_space:

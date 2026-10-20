@@ -4,7 +4,7 @@ DEPFLAGS  = -MMD -MP
 LDFLAGS   = -lX11 -lXext -lpthread
 
 SRCS = sculpt_mesh.cpp sculpt_engine.cpp sculpt_io.cpp sculpt_ui.cpp main.cpp display.cpp render.cpp ui.cpp saver.cpp startscreen.cpp \
-       settings.cpp mesh.cpp obj_loader.cpp billboard.cpp overhead.cpp
+       settings.cpp mesh.cpp obj_loader.cpp billboard.cpp overhead.cpp animation.cpp anim_ui.cpp
 OBJS = $(SRCS:.cpp=.o)
 DEPS = $(OBJS:.o=.d)
 BIN  = R3DO

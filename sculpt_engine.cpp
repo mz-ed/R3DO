@@ -62,22 +62,47 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
         return;
     }
     last_hit_pos_ = hit_pos; has_last_hit_ = true; last_radius_used_ = brush.radius;
-    last_sx_ = sx; last_sy_ = sy;
 
     float radius = brush.radius;
     float strength = brush.strength;
     if (brush.invert) strength *= -1.0f;
     if (!is_additive) strength *= -0.5f;
 
+    // Screen-space delta for Grab (projected into world space via camera basis)
+    double dsx = sx - last_sx_;
+    double dsy = sy - last_sy_;
+    last_sx_ = sx; last_sy_ = sy;
+    double scale = 1.0 / std::max(img_w, img_h);
+    Vec3 right = cam.right();
+    Vec3 up = cross(right, cam.forward());
+    Vec3 screen_delta = (right * dsx + up * (-dsy)) * (2.0 * scale * 4.0);
+
     auto& verts = active_->vertices();
     bool changed = false;
-    
-    // For Grab brush, track initial state
+
+    // For Grab brush, capture initial state on first touch
     if (brush.type == BrushType::Grab && !grab_active_) {
         grab_active_ = true;
         grab_center_ = hit_pos;
     }
-    
+
+    // Pre-compute flatten plane once
+    Vec3 flat_center(0,0,0), flat_normal(0,0,0);
+    int flat_count = 0;
+    if (brush.type == BrushType::Flatten) {
+        for (const auto& v : verts) {
+            if ((v.pos - hit_pos).length() <= radius) {
+                flat_center += v.pos;
+                flat_normal += v.normal;
+                flat_count++;
+            }
+        }
+        if (flat_count > 0) {
+            flat_center = flat_center / (double)flat_count;
+            flat_normal = unit_vector(flat_normal);
+        }
+    }
+
     for (size_t i = 0; i < verts.size(); i++) {
         Vec3 vpos = verts[i].pos;
         Vec3 to = vpos - hit_pos;
@@ -89,32 +114,85 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
         Vec3 disp(0,0,0);
         switch (brush.type) {
         case BrushType::Draw:
-        case BrushType::Inflate:
-        case BrushType::Blob:
             disp = verts[i].normal * (strength * w);
+            break;
+        case BrushType::Inflate:
+            disp = unit_vector(vpos - active_->get_center()) * (strength * w);
             break;
         case BrushType::Deflate:
             disp = -verts[i].normal * (strength * w);
             break;
+        case BrushType::Carve: {
+            // Sharp inward displacement for clean cuts/indents
+            float sharp_w = w * w; // sharper falloff for clean carving
+            disp = -verts[i].normal * (strength * sharp_w);
+            break;
+        }
+        case BrushType::Implode: {
+            // Pull vertices toward mesh center (opposite of Inflate)
+            Vec3 to_center = active_->get_center() - vpos;
+            if (to_center.length() > 1e-10) {
+                disp = unit_vector(to_center) * (strength * w);
+            }
+            break;
+        }
         case BrushType::PushPull:
             disp = unit_vector(cam.forward()) * (strength * w);
             break;
-        case BrushType::Grab:
-            // Simple grab: translate vertices along the movement of hit point
-            if (has_last_hit_) {
-                // Use the delta from when grab started? Or simpler approximation
-                disp = ((hit_pos - last_hit_pos_).length() > 1e-8 ? (hit_pos - last_hit_pos_) : Vec3(0,0,0));
-                disp = disp * strength * w * 0.5f;
+        case BrushType::Blob:
+            disp = verts[i].normal * (strength * w * (1.0f - w));
+            break;
+        case BrushType::Clay: {
+            // Normal displacement with smoothstep falloff — like Draw but softer at edges
+            float fw = w * w * (3.0f - 2.0f * w);
+            disp = verts[i].normal * (strength * fw);
+            break;
+        }
+        case BrushType::Pinch: {
+            // Pull vertices toward brush center along tangent
+            if (d > 1e-10) {
+                Vec3 inward = unit_vector(hit_pos - vpos);
+                disp = inward * (strength * w * d / radius);
             }
             break;
-        case BrushType::Smooth: {
-            // Average positions of adjacent vertices
+        }
+        case BrushType::Crease: {
+            // Push inward along sharp crease: displacement is toward average of neighbors, 
+            // scaled by how sharp the local curvature is
             Vec3 avg(0,0,0);
             int cnt = 0;
             const auto& adj = active_->adj_faces();
             if (i < adj.size()) {
-                // Collect unique neighbor vertex positions
-                // For each adjacent face, get the other 2 verts
+                for (int fi : adj[i]) {
+                    const auto& f = active_->faces()[fi];
+                    int nv[3] = {f.v0, f.v1, f.v2};
+                    for (int j = 0; j < 3; j++) {
+                        if (nv[j] != (int)i && nv[j] >= 0 && nv[j] < (int)verts.size()) {
+                            avg += verts[nv[j]].pos;
+                            cnt++;
+                        }
+                    }
+                }
+            }
+            if (cnt > 0) {
+                avg = avg / (double)cnt;
+                Vec3 to_avg = avg - vpos;
+                double curvature = to_avg.length();
+                // Push along curvature direction, stronger where surface curves sharply
+                disp = unit_vector(to_avg) * (strength * w * std::min(curvature * 10.0, 1.0));
+            }
+            break;
+        }
+        case BrushType::Grab:
+            if (has_last_hit_ && screen_delta.length() > 1e-12) {
+                disp = screen_delta * (strength * w);
+            }
+            break;
+        case BrushType::Smooth: {
+            Vec3 avg(0,0,0);
+            int cnt = 0;
+            const auto& adj = active_->adj_faces();
+            if (i < adj.size()) {
                 for (int fi : adj[i]) {
                     const auto& f = active_->faces()[fi];
                     int nv[3] = {f.v0, f.v1, f.v2};
@@ -133,23 +211,9 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
             break;
         }
         case BrushType::Flatten: {
-            // Compute average plane center and normal of vertices in radius
-            Vec3 c(0,0,0), n(0,0,0);
-            int k = 0;
-            for (size_t j = 0; j < verts.size(); j++) {
-                double dj = (verts[j].pos - hit_pos).length();
-                if (dj <= radius) {
-                    c += verts[j].pos;
-                    n += verts[j].normal;
-                    k++;
-                }
-            }
-            if (k > 0) {
-                c = c / (double)k;
-                n = unit_vector(n / (double)k);
-                // Project vertex onto plane (along normal direction)
-                double dist_to_plane = dot(vpos - c, n);
-                disp = -n * dist_to_plane * (strength * w);
+            if (flat_count > 0) {
+                double dist_to_plane = dot(vpos - flat_center, flat_normal);
+                disp = -flat_normal * dist_to_plane * (strength * w);
             }
             break;
         }
@@ -169,8 +233,7 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
                 if (brush.mirror_x) mir_pos.x = -orig_pos.x;
                 if (brush.mirror_y) mir_pos.y = -orig_pos.y;
                 if (brush.mirror_z) mir_pos.z = -orig_pos.z;
-                // Find closest vertex to mirrored position
-                double bestd = 1e-3; // small threshold
+                double bestd = 1e-3;
                 int bestv = -1;
                 for (size_t j = 0; j < verts.size(); j++) {
                     if ((int)j == (int)i) continue;
@@ -179,12 +242,8 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
                     if (brush.mirror_x) t.x = -mp.x;
                     if (brush.mirror_y) t.y = -mp.y;
                     if (brush.mirror_z) t.z = -mp.z;
-                    // Check if this vertex maps to near orig_pos under mirror?
-                    double d = (t - orig_pos).length();
-                    if (d < bestd) {
-                        bestd = d;
-                        bestv = (int)j;
-                    }
+                    double dm = (t - orig_pos).length();
+                    if (dm < bestd) { bestd = dm; bestv = (int)j; }
                 }
                 if (bestv >= 0) {
                     Vec3 mir_disp = disp;

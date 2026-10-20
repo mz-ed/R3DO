@@ -103,6 +103,49 @@ Vec3 SculptMesh::get_center() const {
     if (verts_.empty()) return Vec3(0,0,0);
     Vec3 s(0,0,0); for (const auto& v: verts_) s+=v.pos; return s/(double)verts_.size();
 }
+
+void SculptMesh::remesh_subdivide() {
+    if (faces_.empty()) return;
+    
+    std::vector<SculptVertex> new_verts = verts_;
+    std::vector<SculptTriangle> new_faces;
+    new_faces.reserve(faces_.size() * 4);
+    
+    // For each triangle, create 3 midpoints and split into 4 triangles
+    for (const auto& f : faces_) {
+        int i0 = f.v0, i1 = f.v1, i2 = f.v2;
+        if (i0 < 0 || i1 < 0 || i2 < 0 || 
+            i0 >= (int)verts_.size() || i1 >= (int)verts_.size() || i2 >= (int)verts_.size())
+            continue;
+        
+        // Create midpoints
+        Vec3 p01 = (verts_[i0].pos + verts_[i1].pos) * 0.5;
+        Vec3 p12 = (verts_[i1].pos + verts_[i2].pos) * 0.5;
+        Vec3 p20 = (verts_[i2].pos + verts_[i0].pos) * 0.5;
+        
+        Vec3 n01 = unit_vector(verts_[i0].normal + verts_[i1].normal);
+        Vec3 n12 = unit_vector(verts_[i1].normal + verts_[i2].normal);
+        Vec3 n20 = unit_vector(verts_[i2].normal + verts_[i0].normal);
+        
+        int m01 = (int)new_verts.size(); new_verts.push_back({p01, n01});
+        int m12 = (int)new_verts.size(); new_verts.push_back({p12, n12});
+        int m20 = (int)new_verts.size(); new_verts.push_back({p20, n20});
+        
+        // 4 sub-triangles
+        new_faces.push_back({i0, m01, m20});
+        new_faces.push_back({m01, i1, m12});
+        new_faces.push_back({m20, m12, i2});
+        new_faces.push_back({m01, m12, m20});
+    }
+    
+    verts_ = std::move(new_verts);
+    faces_ = std::move(new_faces);
+    
+    rebuild_normals();
+    rebuild_topology(true);
+    rebuild_bvh();
+}
+
 void SculptMesh::translate(const Vec3& d){ for (auto& v: verts_) v.pos+=d; }
 
 static inline void fe(float bmin[3],float bmax[3],const Vec3& p){ float v[3]={float(p.x),float(p.y),float(p.z)}; for(int a=0;a<3;a++){ if(v[a]<bmin[a])bmin[a]=v[a]; if(v[a]>bmax[a])bmax[a]=v[a];}}
@@ -140,11 +183,12 @@ void SculptMesh::rebuild_bvh() {
     if (!bnodes_.empty()) flat(0);
 }
 
-bool SculptMesh::hit(const Ray& r,double t_min,double t_max,HitRecord& rec) const {
+bool SculptMesh::hit(const Ray& r_in,double t_min,double t_max,HitRecord& rec) const {
+    Ray r(r_in.origin() - anim_offset_, r_in.direction());
     if (fn2_.empty()||faces_.empty()){
         bool any=false; double cl=t_max; HitRecord tmp;
         for(const auto& f:faces_){ if(ray_tri_intersect(r,verts_[f.v0].pos,verts_[f.v1].pos,verts_[f.v2].pos,t_min,cl,tmp)){ any=true; cl=tmp.t; rec=tmp;}}
-        if(any){ rec.color=color_; return true;} return false;
+        if(any){ rec.p = rec.p + anim_offset_; rec.color=color_; return true;} return false;
     }
     struct St{ int n; double t0,t1;};
     int stack[256]; int sp=0; stack[sp++]=0;
@@ -173,7 +217,7 @@ bool SculptMesh::hit(const Ray& r,double t_min,double t_max,HitRecord& rec) cons
             else { stack[sp++]=n.rightFirst; stack[sp++]=n.leftFirst; }
         }
     }
-    if(any){ rec.color=color_; return true;} return false;
+    if(any){ rec.p = rec.p + anim_offset_; rec.color=color_; return true;} return false;
 }
 
 bool SculptMesh::export_obj(const std::string& fn) const {

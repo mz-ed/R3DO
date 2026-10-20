@@ -339,8 +339,9 @@ static inline bool sse_test_packet(
 #endif
 
 // --- BVH traversal ---
-bool Mesh::hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const {
+bool Mesh::hit(const Ray& r_in, double t_min, double t_max, HitRecord& rec) const {
     if (nodes_.empty()) return false;
+    Ray r(r_in.origin() - anim_offset_, r_in.direction());
 
     float closest_t = (float)t_max;
     bool hit_any = false;
@@ -422,6 +423,7 @@ bool Mesh::hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const {
     }
 
     if (hit_any) {
+        rec.p = rec.p + anim_offset_;
         rec.color = color;
         return true;
     }

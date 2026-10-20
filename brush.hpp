@@ -24,7 +24,9 @@ enum class BrushType {
     Clay,
     Pinch,
     Crease,
-    Blob
+    Blob,
+    Carve,
+    Implode
 };
 
 struct Brush {
@@ -77,6 +79,8 @@ struct Brush {
         case BrushType::Pinch: return "Pinch";
         case BrushType::Crease: return "Crease";
         case BrushType::Blob: return "Blob";
+        case BrushType::Carve: return "Carve";
+        case BrushType::Implode: return "Implode";
         default: return "Draw";
         }
     }

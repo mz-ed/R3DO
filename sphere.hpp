@@ -17,9 +17,10 @@ public:
     Vec3 get_color() const override { return color; }
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
-        Vec3 oc = r.origin() - center;
-        double a = dot(r.direction(), r.direction());
-        double b = 2.0 * dot(oc, r.direction());
+        Ray lr(r.origin() - anim_offset_, r.direction());
+        Vec3 oc = lr.origin() - center;
+        double a = dot(lr.direction(), lr.direction());
+        double b = 2.0 * dot(oc, lr.direction());
         double c = dot(oc, oc) - radius * radius;
         double discriminant = b*b - 4*a*c;
         if (discriminant < 0) return false;
@@ -30,9 +31,9 @@ public:
             if (t < t_min || t > t_max) return false;
         }
         rec.t = t;
-        rec.p = r.at(t);
-        Vec3 outward_normal = (rec.p - center) / radius;
-        rec.set_face_normal(r, outward_normal);
+        rec.p = lr.at(t) + anim_offset_;
+        Vec3 outward_normal = (lr.at(t) - center) / radius;
+        rec.set_face_normal(lr, outward_normal);
         rec.color = this->color;
         return true;
     }

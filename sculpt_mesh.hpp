@@ -53,6 +53,7 @@ public:
 
     void rebuild_normals();
     void rebuild_topology(bool recompute_adjacency = true);
+    void remesh_subdivide();
     void rebuild_bvh();
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override;

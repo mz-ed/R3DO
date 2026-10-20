@@ -40,6 +40,11 @@ void UI::build_sections() {
             {BtnID::SCULPT_BRUSH_DEC, "-R", "Brush Radius -"},
             {BtnID::SCULPT_STR_INC, "+S", "Strength +"},
             {BtnID::SCULPT_STR_DEC, "-S", "Strength -"},
+            {BtnID::SCULPT_RES_INC, "+Res", "Resolution +"},
+            {BtnID::SCULPT_RES_DEC, "-Res", "Resolution -"},
+            {BtnID::SCULPT_BRUSH_NEXT, "Brush", "Next Brush Type"},
+            {BtnID::SCULPT_REMESH, "Remesh", "Subdivide Mesh"},
+            {BtnID::SCULPT_INVERT, "Invert", "Toggle Invert/Implode"},
         }},
         {"Actions", {
             {BtnID::CLEAR,     "X", "Clear All"},
@@ -55,10 +60,10 @@ void UI::build_sections() {
 
 void UI::update_labels() {
     static const char* mode_names[] = {"Raytrace", "Billboard", "Overhead", "Sculpt", "Static"};
-    if (render_mode_ >= 0 && render_mode_ <= 3)
+    if (render_mode_ >= 0 && render_mode_ <= 4)
         mode_label_ = std::string("Mode: ") + mode_names[render_mode_];
     else
-        mode_label_ = std::string("Mode: ") + mode_names[1];
+        mode_label_ = std::string("Mode: ") + mode_names[0];
     ground_label_ = ground_mode_ ? "Ground: ON" : "Ground: OFF";
     // Sections hold copies of the label strings — keep them in sync.
     for (auto& sec : sections_) {
@@ -72,19 +77,22 @@ void UI::update_labels() {
 int UI::section_y(int si) const {
     int y = 30; // start below title
     for (int s = 0; s < si; s++) {
-        y += 16; // section header
-        y += (int)sections_[s].buttons.size() * (BTN_H + BTN_GAP);
-        if (!sections_[s].buttons.empty()) y -= BTN_GAP;
-        y += 8; // section spacing
-        // mesh selector space after Add section
-        if (s == 0) y += SML_H + BTN_GAP;
+        y += 20; // section header height + spacing
+        if (!section_collapsed_[s]) {
+            y += (int)sections_[s].buttons.size() * (BTN_H + BTN_GAP);
+            if (!sections_[s].buttons.empty()) y -= BTN_GAP;
+            y += 8; // section spacing
+            if (s == 0) y += SML_H + BTN_GAP;
+        } else {
+            y += 8; // collapsed spacing
+        }
     }
     return y;
 }
 
 int UI::button_y(int si, int bi) const {
     int y = section_y(si);
-    y += 16; // header
+    y += 20; // header height + spacing (matches new draw)
     y += bi * (BTN_H + BTN_GAP);
     return y;
 }
@@ -94,6 +102,7 @@ BtnID UI::button_at(int mx, int my) const {
     if (mx < sx || mx >= sx + SIDEBAR_W) return BtnID::NONE;
 
     for (size_t si = 0; si < sections_.size(); si++) {
+        if (section_collapsed_[si]) continue;
         for (size_t bi = 0; bi < sections_[si].buttons.size(); bi++) {
             int bx = sx + 10;
             int by = button_y((int)si, (int)bi);
@@ -109,7 +118,7 @@ BtnID UI::button_at(int mx, int my) const {
                 }
             }
 
-            if (my >= by && my < by + BTN_H) return sections_[si].buttons[bi].id;
+            if (my >= by - 3 && my < by + BTN_H + 3 && mx >= bx - 2 && mx < bx + BTN_W + 2) return sections_[si].buttons[bi].id;
         }
     }
     return BtnID::NONE;
@@ -261,6 +270,27 @@ bool UI::handle_click(int mx, int my) {
     if (mx < sidebar_x() || mx >= sidebar_x() + SIDEBAR_W)
         return false;
 
+    // Check section headers for collapse/expand
+    int sx = sidebar_x();
+    int y = 30;
+    for (size_t si = 0; si < sections_.size(); si++) {
+        int hy = y;
+        int hh = 20;
+        if (mx >= sx + 5 && mx < sx + SIDEBAR_W - 5 && my >= hy && my < hy + hh) {
+            section_collapsed_[si] = !section_collapsed_[si];
+            return true;
+        }
+        y += hh;
+        if (!section_collapsed_[si]) {
+            y += (int)sections_[si].buttons.size() * (BTN_H + BTN_GAP);
+            if (!sections_[si].buttons.empty()) y -= BTN_GAP;
+            y += 8;
+            if (si == 0) y += SML_H + BTN_GAP;
+        } else {
+            y += 8;
+        }
+    }
+
     BtnID id = button_at(mx, my);
 
     switch (id) {
@@ -279,8 +309,7 @@ bool UI::handle_click(int mx, int my) {
         case BtnID::SAVE:      open_save_dialog(); return true;
         case BtnID::MODE:      render_mode_ = (render_mode_ + 1) % 5; update_labels(); return true;
         case BtnID::SCULPT_ADD: {
-            // Add sphere sculpt mesh at origin of last pick? add at camera forward offset
-            SculptMesh* sm = SculptMesh::create_sphere(Vec3(0,0,0), 0.4, 16, 12, Vec3(0.8,0.7,0.5));
+            SculptMesh* sm = SculptMesh::create_sphere(Vec3(0,0,0), 0.4, sculpt_segs_, sculpt_rings_, Vec3(0.8,0.7,0.5));
             if (sm) {
                 grid.add_free(sm);
                 if (sculpt_) sculpt_->set_active(sm);
@@ -314,6 +343,57 @@ bool UI::handle_click(int mx, int my) {
             if (brush_strength_ < 0.05f) brush_strength_ = 0.05f;
             char buf[64]; snprintf(buf, sizeof(buf), "Strength: %.2f", brush_strength_);
             show_msg(buf);
+            return true;
+        }
+        case BtnID::SCULPT_RES_INC: {
+            sculpt_segs_ += 4; sculpt_rings_ += 3;
+            if (sculpt_segs_ > 64) sculpt_segs_ = 64;
+            if (sculpt_rings_ > 48) sculpt_rings_ = 48;
+            char buf[64]; snprintf(buf, sizeof(buf), "Res: %dx%d", sculpt_segs_, sculpt_rings_);
+            show_msg(buf);
+            return true;
+        }
+        case BtnID::SCULPT_RES_DEC: {
+            sculpt_segs_ -= 4; sculpt_rings_ -= 3;
+            if (sculpt_segs_ < 8) sculpt_segs_ = 8;
+            if (sculpt_rings_ < 6) sculpt_rings_ = 6;
+            char buf[64]; snprintf(buf, sizeof(buf), "Res: %dx%d", sculpt_segs_, sculpt_rings_);
+            show_msg(buf);
+            return true;
+        }
+        case BtnID::SCULPT_BRUSH_NEXT: {
+            static const BrushType types[] = {
+                BrushType::Draw, BrushType::Inflate, BrushType::Deflate,
+                BrushType::Carve, BrushType::Implode, BrushType::Smooth,
+                BrushType::Flatten, BrushType::Grab, BrushType::PushPull,
+                BrushType::Pinch, BrushType::Crease, BrushType::Clay, BrushType::Blob
+            };
+            static const char* names[] = {
+                "Draw", "Inflate", "Deflate", "Carve", "Implode", "Smooth",
+                "Flatten", "Grab", "PushPull", "Pinch", "Crease", "Clay", "Blob"
+            };
+            static const int n = sizeof(types) / sizeof(types[0]);
+            static int cur = 0;
+            cur = (cur + 1) % n;
+            brush_type_ = types[cur];
+            char buf[64]; snprintf(buf, sizeof(buf), "Brush: %s", names[cur]);
+            show_msg(buf);
+            return true;
+        }
+        case BtnID::SCULPT_REMESH: {
+            if (sculpt_ && sculpt_->active()) {
+                sculpt_->active()->remesh_subdivide();
+                char buf[64];
+                snprintf(buf, sizeof(buf), "Remeshed: %d verts", (int)sculpt_->active()->vertices().size());
+                show_msg(buf);
+            } else {
+                show_msg("No active mesh");
+            }
+            return true;
+        }
+        case BtnID::SCULPT_INVERT: {
+            brush_invert_ = !brush_invert_;
+            show_msg(brush_invert_ ? "Invert: ON (implode)" : "Invert: OFF");
             return true;
         }
         case BtnID::GROUND:    toggle_ground_mode(); return true;
@@ -392,128 +472,87 @@ void UI::draw() {
     mouse_x_ = display.mouse_x();
     mouse_y_ = display.mouse_y();
 
-    // Sidebar background
-    display.fill_rect(sx, 0, SIDEBAR_W, display.height(), 0x1a1a2e);
-    display.fill_rect(sx - 2, 0, 2, display.height(), 0x444466);
+    display.fill_rect(sx, 0, SIDEBAR_W, display.height(), 0x1e1e1e);
+    display.fill_rect(sx - 1, 0, 1, display.height(), 0x333333);
 
-    // Title
-    display.draw_text(sx + 10, 14, "R3DO", 0xffffff);
-    display.fill_rect(sx + 10, 20, 40, 1, 0x666688);
+    display.draw_text(sx + 12, 16, "R3DO", 0xffffff);
+    display.fill_rect(sx + 12, 22, 40, 1, 0x2d2d2d);
 
-    // Determine hover
     hovered_ = button_at(mouse_x_, mouse_y_);
 
-    // Draw sections
+    int sy_cur = 30;
     for (size_t si = 0; si < sections_.size(); si++) {
-        int sy = section_y((int)si);
-
-        // Section header
-        display.draw_text(sx + 10, sy, sections_[si].title.c_str(), 0x888888);
-        display.fill_rect(sx + 10, sy + 14, BTN_W, 1, 0x333355);
-
-        // Draw buttons
+        const bool collapsed = section_collapsed_[si];
+        char header[128];
+        snprintf(header, sizeof(header), "%s %s", collapsed ? "+" : "-", sections_[si].title.c_str());
+        display.draw_text(sx + 12, sy_cur + 12, header, 0xffffff);
+        display.fill_rect(sx + 12, sy_cur + 18, BTN_W, 1, 0x2d2d2d);
+        sy_cur += 20;
+        if (collapsed) { sy_cur += 8; continue; }
         for (size_t bi = 0; bi < sections_[si].buttons.size(); bi++) {
             const auto& btn = sections_[si].buttons[bi];
-            int by = button_y((int)si, (int)bi);
-            int bx = sx + 10;
             bool hover = (hovered_ == btn.id);
-
-            unsigned long bg = hover ? 0x44446e : 0x333355;
-            unsigned long bg2 = hover ? 0x505080 : 0x3d3d6b;
-
-            // Special styling for mode/ground/terrain
-            unsigned long fg = 0xccccff;
-            if (btn.id == BtnID::MODE) fg = 0x55aaff;
-            else if (btn.id == BtnID::GROUND) fg = ground_mode_ ? 0x55ff55 : 0xff5555;
-            else if (btn.id == BtnID::TERRAIN) fg = grid.has_terrain() ? 0x55ff55 : 0xccccff;
-
-            // Button background
-            display.fill_rect(bx, by, BTN_W, BTN_H, bg);
-            display.fill_rect(bx + 1, by + 1, BTN_W - 2, BTN_H - 2, bg2);
-
-            // Icon + label
-            char label[96];
-            if (!btn.icon.empty()) {
-                snprintf(label, sizeof(label), "%s %s", btn.icon.c_str(), btn.label.c_str());
-            } else {
-                snprintf(label, sizeof(label), "%s", btn.label.c_str());
-            }
-            display.draw_text(bx + 8, by + 18, label, fg);
-
-            // Mesh selector below MESH button
+            unsigned long bg = hover ? 0x3e3e3e : 0x323232;
+            unsigned long bg2 = hover ? 0x4a4a4a : 0x2d2d2d;
+            unsigned long fg = 0xcccccc;
+            if (btn.id == BtnID::MODE) fg = 0x61afef;
+            else if (btn.id == BtnID::GROUND) fg = ground_mode_ ? 0x4a90e2 : 0xcccccc;
+            else if (btn.id == BtnID::TERRAIN) fg = grid.has_terrain() ? 0x4a90e2 : 0xcccccc;
+            else if (hover) fg = 0xffffff;
+            display.fill_rect(sx + 10, sy_cur, BTN_W, BTN_H, bg);
+            display.fill_rect(sx + 11, sy_cur + 1, BTN_W - 2, BTN_H - 2, bg2);
+            char label[128];
+            if (!btn.icon.empty()) snprintf(label, sizeof(label), "%s %s", btn.icon.c_str(), btn.label.c_str());
+            else snprintf(label, sizeof(label), "%s", btn.label.c_str());
+            display.draw_text(sx + 18, sy_cur + 16, label, fg);
+            sy_cur += BTN_H + BTN_GAP;
             if (btn.id == BtnID::MESH && !mesh_files_.empty()) {
-                int my2 = by + BTN_H + BTN_GAP;
                 const std::string& name = mesh_files_[mesh_idx_];
                 size_t slash = name.find_last_of('/');
-                std::string shortname = (slash != std::string::npos)
-                    ? name.substr(slash + 1) : name;
-
-                // "<" button
+                std::string shortname = (slash != std::string::npos) ? name.substr(slash + 1) : name;
                 bool prev_hover = (hovered_ == BtnID::MESH_PREV);
-                unsigned long pbg = prev_hover ? 0x44446e : 0x333355;
-                unsigned long pbg2 = prev_hover ? 0x505080 : 0x3d3d6b;
-                display.fill_rect(bx, my2, SML_BTN_W, SML_H, pbg);
-                display.fill_rect(bx + 1, my2 + 1, SML_BTN_W - 2, SML_H - 2, pbg2);
-                display.draw_text(bx + 6, my2 + 13, "<", 0xccccff);
-
-                // filename
+                unsigned long pbg = prev_hover ? 0x3e3e3e : 0x323232;
+                unsigned long pbg2 = prev_hover ? 0x4a4a4a : 0x2d2d2d;
+                display.fill_rect(sx + 10, sy_cur, SML_BTN_W, SML_H, pbg);
+                display.fill_rect(sx + 11, sy_cur + 1, SML_BTN_W - 2, SML_H - 2, pbg2);
+                display.draw_text(sx + 16, sy_cur + 12, "<", 0xcccccc);
                 char flabel[128];
-                snprintf(flabel, sizeof(flabel), "[%zu/%zu] %s",
-                         (size_t)(mesh_idx_ + 1), mesh_files_.size(),
-                         shortname.substr(0, 90).c_str());
-                display.draw_text(bx + SML_BTN_W + 4, my2 + 13, flabel, 0x88aaff);
-
-                // ">" button
+                snprintf(flabel, sizeof(flabel), "[%zu/%zu] %s", (size_t)(mesh_idx_ + 1), mesh_files_.size(), shortname.substr(0, 60).c_str());
+                display.draw_text(sx + 10 + SML_BTN_W + 4, sy_cur + 12, flabel, 0x61afef);
                 bool next_hover = (hovered_ == BtnID::MESH_NEXT);
-                unsigned long nbg = next_hover ? 0x44446e : 0x333355;
-                unsigned long nbg2 = next_hover ? 0x505080 : 0x3d3d6b;
-                int rx = bx + BTN_W - SML_BTN_W;
-                display.fill_rect(rx, my2, SML_BTN_W, SML_H, nbg);
-                display.fill_rect(rx + 1, my2 + 1, SML_BTN_W - 2, SML_H - 2, nbg2);
-                display.draw_text(rx + 6, my2 + 13, ">", 0xccccff);
+                pbg = next_hover ? 0x3e3e3e : 0x323232;
+                pbg2 = next_hover ? 0x4a4a4a : 0x2d2d2d;
+                display.fill_rect(sx + BTN_W + 10 - SML_BTN_W, sy_cur, SML_BTN_W, SML_H, pbg);
+                display.fill_rect(sx + BTN_W + 11 - SML_BTN_W, sy_cur + 1, SML_BTN_W - 2, SML_H - 2, pbg2);
+                display.draw_text(sx + BTN_W + 10 - SML_BTN_W + 6, sy_cur + 12, ">", 0xcccccc);
+                sy_cur += SML_H + BTN_GAP;
             }
         }
+        if (!sections_[si].buttons.empty()) sy_cur -= BTN_GAP;
+        sy_cur += 12;
     }
 
-    // Terrain status (below terrain btn)
-    int terrain_by = button_y(3, 2);
-    int status_y = terrain_by + BTN_H + BTN_GAP + 4;
+    // Footer status
     {
         char tbuf[64];
         snprintf(tbuf, sizeof(tbuf), "Terrain: %s", grid.has_terrain() ? "loaded" : "none");
-        display.draw_text(sx + 10, status_y, tbuf, grid.has_terrain() ? 0x55aa55 : 0x555555);
+        display.draw_text(sx + 12, sy_cur + 10, tbuf, grid.has_terrain() ? 0x4a90e2 : 0x666666);
+        sy_cur += 18;
     }
-
-    // Info section (below settings)
-    int info_y = status_y + 18;
-    display.fill_rect(sx + 10, info_y, BTN_W, 1, 0x333355);
-    info_y += 8;
-
     char buf[64];
     snprintf(buf, sizeof(buf), "Objects: %d", grid.object_count());
-    display.draw_text(sx + 10, info_y, buf, 0xaaaaaa);
-    info_y += 18;
-
-    snprintf(buf, sizeof(buf), "Cam: %.1f %.1f %.1f", cam.pos.x, cam.pos.y, cam.pos.z);
-    display.draw_text(sx + 10, info_y, buf, 0x666688);
-    info_y += 18;
-
+    display.draw_text(sx + 12, sy_cur + 10, buf, 0xaaaaaa);
+    sy_cur += 16;
     if (now_s() < save_msg_until_) {
-        display.draw_text(sx + 10, info_y, save_msg_, 0x55ff55);
-        info_y += 18;
+        display.draw_text(sx + 12, sy_cur + 10, save_msg_, 0x4a90e2);
+        sy_cur += 16;
     }
-
-    info_y += 4;
-    display.fill_rect(sx + 10, info_y, BTN_W, 1, 0x333355);
-    info_y += 8;
-
-    display.draw_text(sx + 10, info_y, "WASD move", 0x666688); info_y += 16;
-    display.draw_text(sx + 10, info_y, "Arrows look", 0x666688); info_y += 16;
-    display.draw_text(sx + 10, info_y, "Q/E up/down", 0x666688); info_y += 16;
-    display.draw_text(sx + 10, info_y, "Space HQ/jump", 0x666688); info_y += 16;
-    display.draw_text(sx + 10, info_y, "G ground  B mode", 0x666688); info_y += 16;
-    display.draw_text(sx + 10, info_y, "Ctrl+Z undo", 0x666688); info_y += 16;
-    display.draw_text(sx + 10, info_y, "RClick place  Esc menu", 0x666688);
+    sy_cur += 4;
+    display.fill_rect(sx + 12, sy_cur, BTN_W, 1, 0x2d2d2d);
+    sy_cur += 8;
+    display.draw_text(sx + 12, sy_cur + 10, "Ctrl+Z undo | B mode", 0x666666);
+    sy_cur += 16;
+    display.draw_text(sx + 12, sy_cur + 10, "Esc menu | Alt+Shift grab", 0x666666);
 
     if (save_dialog_active_) {
         draw_save_dialog();

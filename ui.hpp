@@ -18,6 +18,10 @@ enum class BtnID {
     CLEAR, SAVE,
     MODE, GROUND, TERRAIN,
     SCULPT_ADD, SCULPT_BRUSH_INC, SCULPT_BRUSH_DEC, SCULPT_STR_INC, SCULPT_STR_DEC,
+    SCULPT_RES_INC, SCULPT_RES_DEC,
+    SCULPT_BRUSH_NEXT,
+    SCULPT_REMESH,
+    SCULPT_INVERT,
     NONE
 };
 
@@ -37,6 +41,10 @@ public:
     int palette_idx() const { return palette_idx_; }
     float brush_radius() const { return brush_radius_; }
     float brush_strength() const { return brush_strength_; }
+    BrushType brush_type() const { return brush_type_; }
+    bool brush_invert() const { return brush_invert_; }
+    int sculpt_segs() const { return sculpt_segs_; }
+    int sculpt_rings() const { return sculpt_rings_; }
 
     void draw();
     bool handle_click(int mx, int my);
@@ -80,6 +88,9 @@ private:
     float brush_radius_ = 0.3f;
     float brush_strength_ = 0.2f;
     BrushType brush_type_ = BrushType::Draw;
+    int sculpt_segs_ = 24;
+    int sculpt_rings_ = 16;
+    bool brush_invert_ = false;
     std::string mode_label_ = "Mode: Billboard";
     std::string ground_label_ = "Ground: OFF";
 
@@ -94,6 +105,8 @@ private:
     int mesh_idx_ = 0;
 
     std::vector<std::string> undo_stack_;
+
+    bool section_collapsed_[4] = {false, false, false, false};
 
     int sidebar_x() const { return display.width() - SIDEBAR_W; }
     void build_sections();

@@ -48,6 +48,16 @@ Settings load_settings() {
             int lq = (int)a, hq = (int)b;
             if (lq >= 1 && lq <= 64) s.lq_samples = lq;
             if (hq >= 1 && hq <= 64) s.hq_samples = hq;
+        } else if (strcmp(key, "light_intensity") == 0 && fscanf(f, "%lf", &a) == 1) {
+            if (a >= 0.0 && a <= 10.0) s.light_intensity = a;
+        } else if (strcmp(key, "shadows") == 0 && fscanf(f, "%lf", &a) == 1) {
+            s.shadows = (int)a != 0;
+        } else if (strcmp(key, "grid_snap") == 0 && fscanf(f, "%lf", &a) == 1) {
+            s.grid_snap = (int)a != 0;
+        } else if (strcmp(key, "wireframe") == 0 && fscanf(f, "%lf", &a) == 1) {
+            s.wireframe = (int)a != 0;
+        } else if (strcmp(key, "smooth_shading") == 0 && fscanf(f, "%lf", &a) == 1) {
+            s.smooth_shading = (int)a != 0;
         }
     }
     fclose(f);
@@ -59,6 +69,11 @@ void save_settings(const Settings& s) {
     if (!f) return;
     fprintf(f, "resolution %d %d\n", s.res.w, s.res.h);
     fprintf(f, "light %.3f %.3f %.3f\n", s.light_x, s.light_y, s.light_z);
+    fprintf(f, "light_intensity %.3f\n", s.light_intensity);
     fprintf(f, "samples %d %d\n", s.lq_samples, s.hq_samples);
+    fprintf(f, "shadows %d\n", s.shadows ? 1 : 0);
+    fprintf(f, "grid_snap %d\n", s.grid_snap ? 1 : 0);
+    fprintf(f, "wireframe %d\n", s.wireframe ? 1 : 0);
+    fprintf(f, "smooth_shading %d\n", s.smooth_shading ? 1 : 0);
     fclose(f);
 }
