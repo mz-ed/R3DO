@@ -1,7 +1,7 @@
 main.o: main.cpp v3.hpp ray.hpp hittable.hpp grid.hpp box.hpp mesh.hpp \
  camera.hpp display.hpp ui.hpp sculpt_engine.hpp sculpt_mesh.hpp \
  brush.hpp saver.hpp render.hpp startscreen.hpp settings.hpp \
- billboard.hpp overhead.hpp animation.hpp anim_ui.hpp
+ billboard.hpp overhead.hpp animation.hpp nkui.hpp
 v3.hpp:
 ray.hpp:
 hittable.hpp:
@@ -21,4 +21,4 @@ settings.hpp:
 billboard.hpp:
 overhead.hpp:
 animation.hpp:
-anim_ui.hpp:
+nkui.hpp:

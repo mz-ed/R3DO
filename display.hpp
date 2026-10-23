@@ -6,6 +6,7 @@
 #include <X11/keysym.h>
 #include <X11/extensions/XShm.h>
 #include <deque>
+#include <functional>
 
 class DisplayWin {
     Display* d;
@@ -77,8 +78,13 @@ public:
 
     Display* xdisplay() const { return d; }
     Window xwindow() const { return w; }
+    XFontStruct* xfont() const { return font_; }
+    void set_event_hook(std::function<void(XEvent&)> hook) { event_hook_ = hook; }
     void grab_pointer();
     void ungrab_pointer();
+
+private:
+    std::function<void(XEvent&)> event_hook_;
 };
 
 #endif

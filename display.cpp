@@ -27,7 +27,7 @@ DisplayWin::DisplayWin(int width, int height, const char* title)
     XStoreName(d, w, title);
     XSelectInput(d, w, ExposureMask | KeyPressMask | KeyReleaseMask |
                  ButtonPressMask | ButtonReleaseMask | ButtonMotionMask |
-                 StructureNotifyMask);
+                 PointerMotionMask | StructureNotifyMask);
     wm_delete = XInternAtom(d, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(d, w, &wm_delete, 1);
     XMapWindow(d, w);
@@ -147,6 +147,7 @@ void DisplayWin::process_events() {
     XEvent e;
     while (XPending(d) > 0) {
         XNextEvent(d, &e);
+        if (event_hook_) event_hook_(e);
         switch (e.type) {
         case KeyPress: {
             KeySym keysym;

@@ -14,7 +14,7 @@
 #include "sculpt_engine.hpp"
 #include "sculpt_mesh.hpp"
 #include "animation.hpp"
-#include "anim_ui.hpp"
+#include "nkui.hpp"
 #include <iostream>
 #include <cmath>
 #include <chrono>
@@ -35,12 +35,27 @@ bool blocked_at(const Grid& grid, const Vec3& p) {
 }
 
 void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
-                const Settings& settings) {
+                const Settings& settings, int initial_mode = 1) {
     SculptEngine sculpt;
     UI ui(grid, cam, display, &sculpt);
-    AnimUI anim_ui(display);
+    NkUI nkui;
+    Animator animator;
+    if (!nkui.init(display))
+        std::cerr << "Nuklear UI init failed (font missing?)" << std::endl;
     bool mouse_captured = false;
-    sculpt.set_active(nullptr);
+
+    ui.set_render_mode(initial_mode);
+    // Re-attach an existing sculpt mesh (e.g. from the start screen) so the
+    // brush works immediately; if none exists, spawn one in front of the eye.
+    for (auto& f : grid.free_objects()) {
+        if (std::string(f->type_name()) == "sculpt") {
+            sculpt.set_active(static_cast<SculptMesh*>(f.get()));
+            break;
+        }
+    }
+    if (initial_mode == 3 && !sculpt.active())
+        ui.add_sculpt_mesh();
+
     const Vec3 light_dir(settings.light_x, settings.light_y, settings.light_z);
     const char* SAVE_PATH = "saves/default.r3do";
 
@@ -75,12 +90,50 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         }
     };
 
+    auto build_targets = [&]() {
+        std::vector<std::string> targets;
+        for (auto& f : grid.free_objects())
+            targets.push_back(std::string("free#") +
+                              std::to_string((long)targets.size()) + " " +
+                              f->type_name());
+        return targets;
+    };
+
+    auto refresh_ui = [&]() {
+        nkui.draw(ui, animator, build_targets());
+        nkui.render();
+    };
+
+    // Widgets are drawn first so button actions (place shape, change mode,
+    // add clip, ...) have already mutated the scene before it is rendered;
+    // the completed Nuklear buffer is then blitted over the panels.
     auto render_and_ui = [&]() {
+        nkui.draw(ui, animator, build_targets());
         render(0);
-        ui.draw();
-        if (anim_ui.visible) anim_ui.draw();
+        nkui.render();
         display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
     };
+
+    auto apply_animator = [&]() {
+        auto& fobjs = grid.free_objects();
+        for (auto& ci : animator.clips) {
+            if (ci.target.type == AnimTarget::FREE_OBJECT &&
+                ci.target.free_idx >= 0 && ci.target.free_idx < (int)fobjs.size()) {
+                Hittable* obj = fobjs[ci.target.free_idx].get();
+                if (obj) obj->set_anim_offset(
+                    ci.clip.evaluate(AnimProperty::Position, animator.global_time));
+            }
+        }
+    };
+
+    auto set_panel_visible = [&](bool v) {
+        nkui.set_visible(v);
+        if (!v) {
+            for (auto& f : grid.free_objects()) f->set_anim_offset(Vec3(0, 0, 0));
+        }
+        render_and_ui();
+    };
+    (void)set_panel_visible;
 
     auto autosave = [&]() {
         save_scene(grid, cam, SAVE_PATH, ui.render_mode(), ui.palette_idx());
@@ -98,10 +151,12 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         bool animating = display.is_mouse_down() ||
                          (ui.ground_mode() && !on_ground) ||
                          ui.is_save_dialog_active() ||
-                         anim_ui.playing();
+                         animator.global_playing;
+        nkui.begin();
         if (!animating)
             display.wait_event(50);
         display.process_events();
+        nkui.end_frame();
         if (display.is_closed()) return;
 
         // Delta time
@@ -110,58 +165,27 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         last_frame = now;
         if (dt > 0.05 || dt <= 0) dt = 0.05;
 
-        // Animation tick
-        if (anim_ui.playing()) {
-            anim_ui.animator().update((float)dt);
-            // Apply animation to free objects
-            auto& clips = anim_ui.animator().clips;
-            for (auto& ci : clips) {
-                if (ci.target.type == AnimTarget::FREE_OBJECT) {
-                    auto& fobjs = grid.free_objects();
-                    if (ci.target.free_idx >= 0 && ci.target.free_idx < (int)fobjs.size()) {
-                        Hittable* obj = fobjs[ci.target.free_idx].get();
-                        if (obj) {
-                            Vec3 pos = ci.clip.evaluate(AnimProperty::Position, ci.current_time);
-                            obj->set_anim_offset(pos);
-                        }
-                    }
-                }
-            }
-            render_and_ui();
+        // Animation tick. When a click is pending, let the input handling
+        // below draw the UI once instead of drawing here as well.
+        if (nkui.visible() && animator.global_playing) {
+            animator.update((float)dt);
+            apply_animator();
+            if (!display.mouse_clicked() && !display.mouse_released())
+                render_and_ui();
+        } else if (!nkui.visible()) {
+            for (auto& f : grid.free_objects()) f->set_anim_offset(Vec3(0, 0, 0));
         }
 
-        // --- Save dialog: modal key + click handling ---
-        if (ui.is_save_dialog_active()) {
-            int key;
-            char c;
-            while (display.poll_key(key, c))
-                ui.handle_save_dialog_key(key, c);
+        // Panel clicks are deferred and drawn at most once per iteration so a
+        // batched press+release cannot fire the same button twice.
+        bool ui_click_pending = false;
 
-            if (display.mouse_clicked()) {
-                int mx = display.mouse_x(), my = display.mouse_y();
-                display.clear_mouse();
-                display.clear_mouse_released();
-                ui.handle_click(mx, my);
-                ui.draw();
-                display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
-            }
-            continue;
-        }
-
-        // --- Mouse clicks ---
         if (display.mouse_clicked()) {
             int mx = display.mouse_x(), my = display.mouse_y();
             int btn = display.mouse_button();
             display.clear_mouse();
-            if (anim_ui.visible && mx < anim_ui.panel_x() + 280) {
-                if (anim_ui.handle_click(mx, my)) {
-                    render_and_ui();
-                }
-            } else if (mx >= display.width() - UI::SIDEBAR_W) {
-                if (ui.handle_click(mx, my)) {
-                    autosave();
-                    render_and_ui();
-                }
+            if (nkui.hit(mx, my)) {
+                ui_click_pending = true;
             } else if (btn == 3) {
                 // Right-click: quick-place the last used shape
                 if (ui.place_last_shape()) {
@@ -174,7 +198,9 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         // Begin sculpt stroke
         static bool sculpt_stroke_active = false;
         bool sculpt_mouse_down = (display.mouse_button() == 1 || display.mouse_button() == 3);
-        if (ui.render_mode() == 3 && display.is_mouse_down() && sculpt_mouse_down && !sculpt_stroke_active) {
+        if (ui.render_mode() == 3 && display.is_mouse_down() && sculpt_mouse_down &&
+            !sculpt_stroke_active &&
+            !nkui.hit(display.mouse_press_x(), display.mouse_press_y())) {
             sculpt.begin_stroke();
             sculpt_stroke_active = true;
         }
@@ -184,7 +210,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
 
         // --- Drag look ---
         if (display.is_mouse_down() &&
-            display.mouse_press_x() < display.width() - UI::SIDEBAR_W) {
+            !nkui.hit(display.mouse_press_x(), display.mouse_press_y())) {
             // Sculpt mode: LMB or RMB strokes
             if (ui.render_mode() == 3 && sculpt_mouse_down) {
                 Brush b;
@@ -207,11 +233,15 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             }
         }
 
-        // --- Click-to-delete ---
-        if (display.mouse_released() && ui.render_mode() != 3) {
+        // --- Release: panel buttons + click-to-delete ---
+        if (display.mouse_released()) {
             display.clear_mouse_released();
-            if (display.mouse_button() == 1 &&
-                display.mouse_press_x() < display.width() - UI::SIDEBAR_W) {
+            bool over_panel = nkui.hit(display.mouse_press_x(), display.mouse_press_y());
+            if (over_panel) {
+                // Deferred draw below: fires the button exactly once even when
+                // press and release arrive in the same iteration.
+                ui_click_pending = true;
+            } else if (ui.render_mode() != 3 && display.mouse_button() == 1) {
                 int dx = display.mouse_x() - display.mouse_press_x();
                 int dy = display.mouse_y() - display.mouse_press_y();
                 int dist = (int)std::sqrt((double)(dx*dx + dy*dy));
@@ -244,7 +274,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                         if (deleted) {
                             autosave();
                             render(settings.lq_samples);
-                            ui.draw();
+                            refresh_ui();
                             display.draw_crosshair(display.width() / 2,
                                                    display.height() / 2, 8, 0x00ff00);
                         }
@@ -253,14 +283,18 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             }
         }
 
+        if (ui_click_pending)
+            render_and_ui();
+
         // --- One-shot keys ---
         bool ctrl_held = display.key_held(XK_Control_L) || display.key_held(XK_Control_R);
         int key;
         char kc;
         while (display.poll_key(key, kc)) {
-            if (anim_ui.visible && anim_ui.key_dialog_open()) {
-                anim_ui.handle_key(key);
-                render_and_ui();
+            bool nk_eats_all = nkui.wants_keys();
+            if (nk_eats_all) {
+                // typing inside a Nuklear widget / over a panel: no editor hotkeys
+                refresh_ui();
                 continue;
             }
             switch (key) {
@@ -283,14 +317,13 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     render_and_ui();
                     break;
                 case XK_t: case XK_T:
-                    anim_ui.visible = !anim_ui.visible;
-                    render_and_ui();
+                    set_panel_visible(!nkui.visible());
                     break;
                 case XK_space:
                     if (!ui.ground_mode()) {
                         std::cout << "Full quality..." << std::endl;
                         render(settings.hq_samples);
-                        ui.draw();
+                        refresh_ui();
                         display.draw_crosshair(display.width() / 2,
                                                display.height() / 2, 8, 0x00ff00);
                     } else if (on_ground) {
@@ -441,15 +474,8 @@ int main() {
             run_editor(grid, cam, display, settings);
         } else if (action == StartAction::SCULPT) {
             grid.clear();
-            SculptEngine sculpt;
-            UI ui(grid, cam, display, &sculpt);
-            // Create a default sculpt mesh
-            SculptMesh* sm = SculptMesh::create_sphere(Vec3(0,0,0), 0.4, 16, 12, Vec3(0.8,0.7,0.5));
-            if (sm) grid.add_free(sm);
-            sculpt.set_active(sm);
-            // Run a simplified sculpt-only session
-            ui.set_render_mode(3);
-            run_editor(grid, cam, display, settings);
+            // run_editor spawns/attaches a sculpt mesh and starts in Sculpt mode
+            run_editor(grid, cam, display, settings, 3);
         } else {
             std::string name = show_load_screen(display);
             if (name.empty() || display.is_closed()) continue;

@@ -12,49 +12,76 @@
 
 enum class ShapeType { SPHERE, BOX, CYLINDER, CONE, MESH };
 
-enum class BtnID {
-    SPHERE, BOX, CYLINDER, CONE, MESH,
-    MESH_PREV, MESH_NEXT,
-    CLEAR, SAVE,
-    MODE, GROUND, TERRAIN,
-    SCULPT_ADD, SCULPT_BRUSH_INC, SCULPT_BRUSH_DEC, SCULPT_STR_INC, SCULPT_STR_DEC,
-    SCULPT_RES_INC, SCULPT_RES_DEC,
-    SCULPT_BRUSH_NEXT,
-    SCULPT_REMESH,
-    SCULPT_INVERT,
-    NONE
-};
-
+// State container + actions for the Nuklear-drawn panels.
+// All pixel drawing / hit-testing lives in nkui.cpp now.
 class UI {
 public:
-    static const int SIDEBAR_W = 170;
-
     UI(Grid& grid, Camera& cam, DisplayWin& display, SculptEngine* sculpt = nullptr);
 
     void set_sculpt_engine(SculptEngine* s) { sculpt_ = s; }
 
+    static constexpr int SIDEBAR_W = 180; // Nuklear sidebar width (docked right)
+
     // --- state accessors ---
     bool ground_mode() const { return ground_mode_; }
     void toggle_ground_mode();
+    void set_ground_mode(bool v);
     int render_mode() const { return render_mode_; }
-    void set_render_mode(int m) { render_mode_ = m; update_labels(); }
+    void set_render_mode(int m) {
+        if (m < 0) m = 0;
+        if (m > 4) m = 4;
+        render_mode_ = m;
+        update_labels();
+    }
     int palette_idx() const { return palette_idx_; }
     float brush_radius() const { return brush_radius_; }
+    void set_brush_radius(float r);
     float brush_strength() const { return brush_strength_; }
+    void set_brush_strength(float s);
     BrushType brush_type() const { return brush_type_; }
+    void set_brush_type(BrushType t) { brush_type_ = t; }
     bool brush_invert() const { return brush_invert_; }
+    void set_brush_invert(bool v) { brush_invert_ = v; }
     int sculpt_segs() const { return sculpt_segs_; }
     int sculpt_rings() const { return sculpt_rings_; }
+    void set_sculpt_res(int segs, int rings);
 
-    void draw();
-    bool handle_click(int mx, int my);
+    // mesh picker
+    const std::vector<std::string>& mesh_files() const { return mesh_files_; }
+    int mesh_idx() const { return mesh_idx_; }
+    void set_mesh_idx(int i) {
+        if (mesh_files_.empty()) mesh_idx_ = 0;
+        else if (i >= 0 && i < (int)mesh_files_.size()) mesh_idx_ = i;
+    }
+    void rescan_meshes() { scan_meshes(); }
+    void cycle_mesh(int dir);
 
+    // actions (invoked by NkUI widgets)
+    bool place_shape(ShapeType type) { return try_place(type); }
+    ShapeType last_shape() const { return last_shape_; }
+    void clear_scene();
+    void add_sculpt_mesh();
+    void do_remesh();
+    void load_terrain();
+
+    // save dialog state (driven by NkUI modal)
+    bool save_dialog_active_ = false;
     bool is_save_dialog_active() const { return save_dialog_active_; }
-    void handle_save_dialog_key(int keysym, char c);
+    void open_save_dialog() {
+        save_dialog_active_ = true;
+        save_name_[0] = 0;
+        save_name_len_ = 0;
+    }
+    const char* save_name() const { return save_name_; }
+    void set_save_name(const char* s);
+    void confirm_save();
+    void cancel_save() { save_dialog_active_ = false; }
+
+    const char* msg() const { return save_msg_; }
+    bool msg_fresh() const { return now_s() < save_msg_until_; }
 
     bool undo();
-    bool place_last_shape();
-    // Capture state before an external mutation (e.g. click-to-delete).
+    bool place_last_shape() { return try_place(last_shape_); }
     void snapshot_for_undo() { push_undo(); }
 
 private:
@@ -63,26 +90,6 @@ private:
     DisplayWin& display;
     SculptEngine* sculpt_ = nullptr;
 
-    static const int BTN_H = 27;
-    static const int BTN_GAP = 3;
-    static const int SML_H = 18;
-
-    struct ButtonDef {
-        BtnID id;
-        std::string icon;
-        std::string label;
-    };
-    struct Section {
-        std::string title;
-        std::vector<ButtonDef> buttons;
-    };
-
-    std::vector<Section> sections_;
-    int mouse_x_ = 0, mouse_y_ = 0;
-    BtnID hovered_ = BtnID::NONE;
-
-    int palette_idx_ = 0;
-    ShapeType last_shape_ = ShapeType::SPHERE;
     int render_mode_ = 1;
     bool ground_mode_ = false;
     float brush_radius_ = 0.3f;
@@ -91,39 +98,31 @@ private:
     int sculpt_segs_ = 24;
     int sculpt_rings_ = 16;
     bool brush_invert_ = false;
-    std::string mode_label_ = "Mode: Billboard";
-    std::string ground_label_ = "Ground: OFF";
+    ShapeType last_shape_ = ShapeType::SPHERE;
+    int palette_idx_ = 0;
 
+public:
+    int mode_label_idx_ = 1;
+
+private:
     char save_msg_[64] = {0};
-    double save_msg_until_ = 0;   // seconds (steady clock)
+    double save_msg_until_ = 0;
     char save_name_[256] = {0};
     int save_name_len_ = 0;
-    bool save_dialog_active_ = false;
-    int cursor_counter_ = 0;
 
     std::vector<std::string> mesh_files_;
     int mesh_idx_ = 0;
 
     std::vector<std::string> undo_stack_;
 
-    bool section_collapsed_[4] = {false, false, false, false};
+    double now_s() const;
 
-    int sidebar_x() const { return display.width() - SIDEBAR_W; }
-    void build_sections();
     void update_labels();
-    int section_y(int section_idx) const;
-    int button_y(int section_idx, int btn_idx) const;
-    BtnID button_at(int mx, int my) const;
     Vec3 palette_color(int index) const;
     bool try_place(ShapeType type);
     void push_undo();
     void show_msg(const char* msg);
-    void cycle_mesh(int dir);
     void scan_meshes();
-    void open_save_dialog();
-    void cancel_save();
-    void confirm_save();
-    void draw_save_dialog();
 };
 
 #endif
