@@ -151,6 +151,151 @@ void UI::load_terrain() {
     }
 }
 
+const std::vector<std::string>* UI::object_list() {
+    obj_refs_.clear();
+    obj_names_.clear();
+
+    // cells
+    for (int i = 0; i < grid.nx; i++) {
+        for (int j = 0; j < grid.ny; j++) {
+            for (int k = 0; k < grid.nz; k++) {
+                Hittable* obj = grid.get(i, j, k);
+                if (!obj) continue;
+                ObjRef r;
+                r.type = ObjRef::CELL;
+                r.i = i; r.j = j; r.k = k;
+                r.base_center = obj->get_center() - obj->anim_offset();
+                obj_refs_.push_back(r);
+                char buf[64];
+                snprintf(buf, sizeof(buf), "cell %d,%d,%d %s", i, j, k, obj->type_name());
+                obj_names_.push_back(buf);
+            }
+        }
+    }
+    // free
+    const auto& fobjs = grid.free_objects();
+    for (int fi = 0; fi < (int)fobjs.size(); fi++) {
+        Hittable* obj = fobjs[(size_t)fi].get();
+        if (!obj) continue;
+        ObjRef r;
+        r.type = ObjRef::FREE;
+        r.free_idx = fi;
+        r.base_center = obj->get_center() - obj->anim_offset();
+        obj_refs_.push_back(r);
+        char buf[64];
+        snprintf(buf, sizeof(buf), "free#%d %s", fi, obj->type_name());
+        obj_names_.push_back(buf);
+    }
+    if (selected_obj_ < 0 && !obj_names_.empty()) selected_obj_ = 0;
+    if (selected_obj_ >= (int)obj_names_.size()) selected_obj_ = -1;
+    return &obj_names_;
+}
+
+void UI::select_object(int i) {
+    if (i < 0) { selected_obj_ = -1; return; }
+    if (i >= (int)obj_names_.size()) return;
+    selected_obj_ = i;
+}
+
+// Move a cell-based object: take (preserve geometry/color), translate, and
+// re-home into the cell containing newc. If newc falls outside the grid, the
+// object is converted to a free object so raytracing still finds it.
+void UI::relocate_cell(int sel, const Vec3& newc) {
+    if (sel < 0 || sel >= (int)obj_refs_.size()) return;
+    ObjRef& r = obj_refs_[(size_t)sel];
+    if (r.type != ObjRef::CELL) return;
+    Hittable* obj = grid.take_cell(r.i, r.j, r.k);
+    if (!obj) return;
+    Vec3 oldc = obj->get_center() - obj->anim_offset();
+    obj->set_anim_offset(Vec3(0, 0, 0));
+    obj->translate(newc - oldc);
+    int ni, nj, nk;
+    if (grid.world_to_cell(newc, ni, nj, nk)) {
+        grid.set(ni, nj, nk, obj);
+        r.i = ni; r.j = nj; r.k = nk;
+        r.base_center = obj->get_center();
+        char buf[64];
+        snprintf(buf, sizeof(buf), "cell %d,%d,%d %s", ni, nj, nk, obj->type_name());
+        obj_names_[(size_t)sel] = buf;
+    } else {
+        grid.add_free(obj);
+        r.type = ObjRef::FREE;
+        r.free_idx = (int)grid.free_objects().size() - 1;
+        r.i = r.j = r.k = -1;
+        r.base_center = obj->get_center();
+        char buf[64];
+        snprintf(buf, sizeof(buf), "free#%d %s", r.free_idx, obj->type_name());
+        obj_names_[(size_t)sel] = buf;
+    }
+}
+
+void UI::move_selected(const Vec3& d) {
+    if (selected_obj_ < 0 || selected_obj_ >= (int)obj_refs_.size()) return;
+    ObjRef& r = obj_refs_[(size_t)selected_obj_];
+    if (r.type == ObjRef::FREE) {
+        if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) return;
+        Hittable* obj = grid.free_objects()[(size_t)r.free_idx].get();
+        if (obj) {
+            push_undo();
+            obj->translate(d);
+            r.base_center = obj->get_center() - obj->anim_offset();
+            show_msg("Moved object");
+        }
+        return;
+    }
+    if (r.type == ObjRef::CELL) {
+        Hittable* obj = grid.get(r.i, r.j, r.k);
+        if (!obj) return;
+        push_undo();
+        Vec3 oldc = obj->get_center() - obj->anim_offset();
+        relocate_cell(selected_obj_, oldc + d);
+        show_msg("Moved object");
+    }
+}
+
+void UI::center_selected_above() {
+    if (selected_obj_ < 0 || selected_obj_ >= (int)obj_refs_.size()) return;
+    ObjRef& r = obj_refs_[(size_t)selected_obj_];
+    if (r.type == ObjRef::FREE) {
+        if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) return;
+        Hittable* obj = grid.free_objects()[(size_t)r.free_idx].get();
+        if (obj) {
+            push_undo();
+            Vec3 c = obj->get_center() - obj->anim_offset();
+            double gh = grid.get_ground_height(c.x, c.z);
+            Vec3 target(c.x, gh + 1.2, c.z);
+            obj->translate(target - c);
+            r.base_center = obj->get_center() - obj->anim_offset();
+            show_msg("Centered above");
+        }
+        return;
+    }
+    if (r.type == ObjRef::CELL) {
+        Hittable* obj = grid.get(r.i, r.j, r.k);
+        if (!obj) return;
+        push_undo();
+        Vec3 oldc = obj->get_center() - obj->anim_offset();
+        double gh = grid.get_ground_height(oldc.x, oldc.z);
+        relocate_cell(selected_obj_, Vec3(oldc.x, gh + 0.6, oldc.z));
+        show_msg("Centered above");
+    }
+}
+
+void UI::reset_selected() {
+    if (selected_obj_ < 0 || selected_obj_ >= (int)obj_refs_.size()) return;
+    const auto& r = obj_refs_[(size_t)selected_obj_];
+    if (r.type == ObjRef::FREE) {
+        if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) return;
+        Hittable* obj = grid.free_objects()[(size_t)r.free_idx].get();
+        if (obj) {
+            push_undo();
+            Vec3 c = obj->get_center() - obj->anim_offset();
+            obj->translate(r.base_center - c);
+            show_msg("Reset to original");
+        }
+    }
+}
+
 void UI::show_msg(const char* msg) {
     snprintf(save_msg_, sizeof(save_msg_), "%s", msg);
     save_msg_until_ = now_s() + 3.0;

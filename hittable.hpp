@@ -28,7 +28,8 @@ public:
     virtual bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const = 0;
     virtual const char* type_name() const { return "unknown"; }
     virtual Vec3 get_color() const { return Vec3(0,0,0); }
-    virtual Vec3 get_center() const { return Vec3(0,0,0) + anim_offset_; }
+    virtual Vec3 get_center() const { return anim_offset_; }
+    virtual void translate(const Vec3& d) { (void)d; }
     virtual std::string mesh_path() const { return ""; }
     bool is_visible() const { return visible_; }
     void set_visible(bool v) { visible_ = v; }

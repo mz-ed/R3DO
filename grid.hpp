@@ -68,6 +68,19 @@ public:
         return nullptr;
     }
 
+    // Releases ownership of the occupant without destroying it (for moving
+    // objects between cells / converting to free objects).
+    Hittable* take_cell(int i, int j, int k) {
+        if (i < 0 || i >= nx || j < 0 || j >= ny || k < 0 || k >= nz) return nullptr;
+        auto& slot = cells[idx(i, j, k)];
+        if (!slot) return nullptr;
+        Hittable* raw = slot.release();
+        if (raw->is_visible()) visible_count_--;
+        cell_object_count_--;
+        recompute_chunk(ci_of(i), cj_of(j), ck_of(k));
+        return raw;
+    }
+
     Vec3 cell_center(int i, int j, int k) const {
         Vec3 base = origin - Vec3(nx * cell_size, ny * cell_size, nz * cell_size) * 0.5;
         return base + Vec3(i * cell_size + cell_size * 0.5, j * cell_size + cell_size * 0.5, k * cell_size + cell_size * 0.5);

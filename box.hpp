@@ -15,9 +15,12 @@ public:
 
     const char* type_name() const override { return "box"; }
     Vec3 get_color() const override { return color; }
+    Vec3 get_center() const override { return (min + max) * 0.5 + anim_offset(); }
+    void translate(const Vec3& d) override { min += d; max += d; }
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
         if (t_max <= t_min) return false;
+        Vec3 ro = r.origin() - anim_offset_;
         double tmin = t_min;
         double tmax = t_max;
         int hit_axis = 0;
@@ -25,7 +28,7 @@ public:
 
         for (int a = 0; a < 3; a++) {
             double d = (a == 0) ? r.direction().x : (a == 1) ? r.direction().y : r.direction().z;
-            double o = (a == 0) ? r.origin().x : (a == 1) ? r.origin().y : r.origin().z;
+            double o = (a == 0) ? ro.x : (a == 1) ? ro.y : ro.z;
             double minv = (a == 0) ? min.x : (a == 1) ? min.y : min.z;
             double maxv = (a == 0) ? max.x : (a == 1) ? max.y : max.z;
 
@@ -44,7 +47,7 @@ public:
         }
 
         rec.t = tmin;
-        rec.p = r.at(tmin);
+        rec.p = r.at(tmin) + anim_offset_;
         Vec3 outward_normal(0, 0, 0);
         if (hit_axis == 0) outward_normal.x = hit_sign;
         else if (hit_axis == 1) outward_normal.y = hit_sign;

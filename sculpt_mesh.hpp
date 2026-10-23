@@ -58,7 +58,7 @@ public:
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override;
     bool export_obj(const std::string& filename) const;
-    void translate(const Vec3& delta);
+    void translate(const Vec3& delta) override;
 
     const std::vector<std::vector<int>>& adj_faces() const { return adj_faces_; }
 

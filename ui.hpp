@@ -56,6 +56,14 @@ public:
     void rescan_meshes() { scan_meshes(); }
     void cycle_mesh(int dir);
 
+    // object selection & movement
+    const std::vector<std::string>* object_list();
+    int selected_object() const { return selected_obj_; }
+    void select_object(int i);
+    void move_selected(const Vec3& d);
+    void center_selected_above();
+    void reset_selected();
+
     // actions (invoked by NkUI widgets)
     bool place_shape(ShapeType type) { return try_place(type); }
     ShapeType last_shape() const { return last_shape_; }
@@ -112,6 +120,18 @@ private:
 
     std::vector<std::string> mesh_files_;
     int mesh_idx_ = 0;
+
+    int selected_obj_ = -1;
+    struct ObjRef {
+        enum Type { CELL, FREE } type;
+        int i = -1, j = -1, k = -1;
+        int free_idx = -1;
+        Vec3 base_center;
+    };
+    std::vector<ObjRef> obj_refs_;
+    std::vector<std::string> obj_names_;
+
+    void relocate_cell(int sel, const Vec3& newc);
 
     std::vector<std::string> undo_stack_;
 

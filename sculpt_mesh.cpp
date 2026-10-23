@@ -100,8 +100,10 @@ void SculptMesh::rebuild_topology(bool) {
 }
 
 Vec3 SculptMesh::get_center() const {
-    if (verts_.empty()) return Vec3(0,0,0);
-    Vec3 s(0,0,0); for (const auto& v: verts_) s+=v.pos; return s/(double)verts_.size();
+    if (verts_.empty()) return anim_offset();
+    Vec3 s(0,0,0); for (const auto& v: verts_) s+=v.pos;
+    Vec3 c = s/(double)verts_.size();
+    return c + anim_offset();
 }
 
 void SculptMesh::remesh_subdivide() {

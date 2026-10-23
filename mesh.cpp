@@ -245,11 +245,12 @@ Mesh::Mesh(std::vector<Triangle> tris, const Vec3& col)
 }
 
 Vec3 Mesh::get_center() const {
-    if (nodes_.empty()) return Vec3(0, 0, 0);
+    if (nodes_.empty()) return anim_offset();
     const FlatNode& r = nodes_[0];
-    return Vec3((r.bmin[0] + r.bmax[0]) * 0.5,
-                (r.bmin[1] + r.bmax[1]) * 0.5,
-                (r.bmin[2] + r.bmax[2]) * 0.5);
+    Vec3 c((r.bmin[0] + r.bmax[0]) * 0.5,
+           (r.bmin[1] + r.bmax[1]) * 0.5,
+           (r.bmin[2] + r.bmax[2]) * 0.5);
+    return c + anim_offset();
 }
 
 // --- SSE4-wide ray-triangle intersection ---
@@ -428,4 +429,21 @@ bool Mesh::hit(const Ray& r_in, double t_min, double t_max, HitRecord& rec) cons
         return true;
     }
     return false;
+}
+
+void Mesh::translate(const Vec3& d) {
+    for (auto& t : triangles_) {
+        t.v0 += d; t.v1 += d; t.v2 += d;
+    }
+    nodes_.clear();
+    if (triangles_.empty()) return;
+    auto tris = triangles_;
+    // rebuild BVH
+    std::vector<int> order(tris.size());
+    for (size_t i = 0; i < order.size(); i++) order[i] = (int)i;
+    build_sah(tris, 0, (int)tris.size());
+    // build_sah uses triangles_? it modifies the passed vector in place via reorder logic; easier to rebuild from scratch
+    nodes_.clear();
+    triangles_ = std::move(tris);
+    build_sah(triangles_, 0, (int)triangles_.size());
 }

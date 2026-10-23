@@ -88,6 +88,7 @@ public:
     struct ClipInstance {
         AnimTarget target;
         AnimationClip clip;
+        Vec3 base_pos{0, 0, 0};   // target's base position when the target was picked
         float current_time = 0.0f;
         bool playing = false;
         float speed = 1.0f;

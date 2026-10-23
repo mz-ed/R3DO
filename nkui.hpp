@@ -8,6 +8,7 @@
 class DisplayWin;
 class Animator;
 class UI;
+class Hittable;
 struct nk_context;
 
 // Nuklear-drawn UI: docked sidebar (right, non-movable), animation panel
@@ -32,7 +33,9 @@ public:
     bool wants_keys() const { return any_active_ || save_modal_open_; }
     bool hit(int mx, int my) const;
 
-    void draw(UI& ui, Animator& anim, const std::vector<std::string>& target_names);
+    void draw(UI& ui, Animator& anim,
+              const std::vector<std::string>& target_names,
+              const std::vector<Hittable*>& target_objs);
 
     nk_context* ctx() { return ctx_; }
 
@@ -57,6 +60,7 @@ private:
     bool sec_sculpt_ = true;
     bool sec_actions_ = true;
     bool sec_settings_ = true;
+    bool sec_objects_ = true;
 
     // save modal buffer
     char save_buf_[64] = {0};
@@ -70,7 +74,9 @@ private:
     float key_x_ = 0.0f, key_y_ = 0.0f, key_z_ = 0.0f;
 
     void draw_sidebar(UI& ui, int ww, int wh);
-    void draw_anim_panel(Animator& anim, const std::vector<std::string>& target_names, int wh);
+    void draw_anim_panel(Animator& anim,
+                         const std::vector<std::string>& target_names,
+                         const std::vector<Hittable*>& target_objs, int wh);
     void draw_save_modal(UI& ui, int ww, int wh);
 };
 

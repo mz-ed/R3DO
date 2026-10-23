@@ -90,17 +90,23 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         }
     };
 
-    auto build_targets = [&]() {
-        std::vector<std::string> targets;
-        for (auto& f : grid.free_objects())
-            targets.push_back(std::string("free#") +
-                              std::to_string((long)targets.size()) + " " +
-                              f->type_name());
-        return targets;
+    auto build_targets = [&](std::vector<std::string>& names,
+                             std::vector<Hittable*>& objs) {
+        names.clear();
+        objs.clear();
+        for (auto& f : grid.free_objects()) {
+            names.push_back(std::string("free#") +
+                            std::to_string((long)objs.size()) + " " +
+                            f->type_name());
+            objs.push_back(f.get());
+        }
     };
 
     auto refresh_ui = [&]() {
-        nkui.draw(ui, animator, build_targets());
+        std::vector<std::string> tnames;
+        std::vector<Hittable*> tobjs;
+        build_targets(tnames, tobjs);
+        nkui.draw(ui, animator, tnames, tobjs);
         nkui.render();
     };
 
@@ -108,7 +114,10 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     // add clip, ...) have already mutated the scene before it is rendered;
     // the completed Nuklear buffer is then blitted over the panels.
     auto render_and_ui = [&]() {
-        nkui.draw(ui, animator, build_targets());
+        std::vector<std::string> tnames;
+        std::vector<Hittable*> tobjs;
+        build_targets(tnames, tobjs);
+        nkui.draw(ui, animator, tnames, tobjs);
         render(0);
         nkui.render();
         display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);

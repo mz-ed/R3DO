@@ -15,6 +15,8 @@ public:
 
     const char* type_name() const override { return "sphere"; }
     Vec3 get_color() const override { return color; }
+    Vec3 get_center() const override { return center + anim_offset(); }
+    void translate(const Vec3& d) override { center += d; }
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
         Ray lr(r.origin() - anim_offset_, r.direction());

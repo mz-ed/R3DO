@@ -16,9 +16,11 @@ public:
 
     const char* type_name() const override { return "cylinder"; }
     Vec3 get_color() const override { return color; }
+    Vec3 get_center() const override { return center + anim_offset(); }
+    void translate(const Vec3& d) override { center += d; }
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
-        Vec3 ro = r.origin() - center;
+        Vec3 ro = r.origin() - center - anim_offset();
         Vec3 rd = r.direction();
         double half_h = height * 0.5;
 
@@ -64,7 +66,7 @@ public:
         if (t_hit >= t_max) return false;
 
         rec.t = t_hit;
-        rec.p = r.at(t_hit);
+        rec.p = r.at(t_hit) + anim_offset();
         rec.set_face_normal(r, hit_normal);
         rec.color = this->color;
         return true;

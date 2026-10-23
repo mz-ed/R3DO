@@ -26,6 +26,7 @@ public:
     std::string mesh_path() const override { return path_; }
     void set_path(const std::string& p) { path_ = p; }
     Vec3 get_center() const override;
+    void translate(const Vec3& d) override;
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override;
 
     std::vector<Triangle>& get_triangles() { return triangles_; }

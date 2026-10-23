@@ -13,6 +13,8 @@
 #include "animation.hpp"
 #include "display.hpp"
 #include "v3.hpp"
+#include "grid.hpp"
+#include "hittable.hpp"
 #include "brush.hpp"
 #include <cstdio>
 #include <cstring>
@@ -237,6 +239,51 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
 
     nk_spacing(ctx_, 1);
 
+    // ---- Objects ----
+    nk_layout_row_dynamic(ctx_, 20, 1);
+    if (nk_button_label(ctx_, sec_objects_ ? "-  OBJECTS" : "+  OBJECTS")) sec_objects_ = !sec_objects_;
+    if (sec_objects_) {
+        int sel = ui.selected_object();
+        const auto* objs = ui.object_list();
+        if (!objs || objs->empty()) {
+            nk_layout_row_dynamic(ctx_, 16, 1);
+            nk_label(ctx_, "(no objects)", NK_TEXT_LEFT);
+        } else {
+            if (sel < 0 || sel >= (int)objs->size()) sel = 0;
+            const char* cur = (*objs)[(size_t)sel].c_str();
+            nk_layout_row_dynamic(ctx_, 20, 1);
+            if (nk_combo_begin_label(ctx_, cur, nk_vec2((float)UI::SIDEBAR_W - 30, 160))) {
+                nk_layout_row_dynamic(ctx_, 18, 1);
+                for (int i = 0; i < (int)objs->size(); i++)
+                    if (nk_combo_item_label(ctx_, (*objs)[(size_t)i].c_str(), NK_TEXT_LEFT))
+                        sel = i;
+                nk_combo_end(ctx_);
+            }
+            ui.select_object(sel);
+            sel = ui.selected_object();
+
+            nk_layout_row_dynamic(ctx_, 22, 3);
+            if (nk_button_label(ctx_, "Up")) { ui.move_selected(Vec3(0, 0.5, 0)); }
+            if (nk_button_label(ctx_, "Down")) { ui.move_selected(Vec3(0, -0.5, 0)); }
+            if (nk_button_label(ctx_, "Reset")) { ui.reset_selected(); }
+
+            nk_layout_row_dynamic(ctx_, 22, 3);
+            if (nk_button_label(ctx_, "+X")) { ui.move_selected(Vec3(0.5, 0, 0)); }
+            if (nk_button_label(ctx_, "-X")) { ui.move_selected(Vec3(-0.5, 0, 0)); }
+            if (nk_button_label(ctx_, "+Z")) { ui.move_selected(Vec3(0, 0, 0.5)); }
+
+            nk_layout_row_dynamic(ctx_, 22, 3);
+            if (nk_button_label(ctx_, "-Z")) { ui.move_selected(Vec3(0, 0, -0.5)); }
+            if (nk_button_label(ctx_, "+Y")) { ui.move_selected(Vec3(0, 0.5, 0)); }
+            if (nk_button_label(ctx_, "-Y")) { ui.move_selected(Vec3(0, -0.5, 0)); }
+
+            nk_layout_row_dynamic(ctx_, 18, 1);
+            if (nk_button_label(ctx_, "Center Above")) { ui.center_selected_above(); }
+        }
+    }
+
+    nk_spacing(ctx_, 1);
+
     // ---- Actions ----
     nk_layout_row_dynamic(ctx_, 20, 1);
     if (nk_button_label(ctx_, sec_actions_ ? "-  ACTIONS" : "+  ACTIONS")) sec_actions_ = !sec_actions_;
@@ -280,7 +327,9 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
     nk_end(ctx_);
 }
 
-void NkUI::draw_anim_panel(Animator& anim, const std::vector<std::string>& target_names, int wh) {
+void NkUI::draw_anim_panel(Animator& anim,
+                           const std::vector<std::string>& target_names,
+                           const std::vector<Hittable*>& target_objs, int wh) {
     if (!visible_) return;
     bool open = nk_begin(ctx_, "Animation", nk_rect(0, 0, (float)PANEL_W, (float)wh),
                          NK_WINDOW_BORDER | NK_WINDOW_TITLE);
@@ -321,6 +370,22 @@ void NkUI::draw_anim_panel(Animator& anim, const std::vector<std::string>& targe
 
     nk_spacing(ctx_, 1);
 
+    // helper: object bound to the selected clip's target
+    auto tgt_obj = [&]() -> Hittable* {
+        if (anim.clips.empty()) return nullptr;
+        if (sel_clip_ < 0 || sel_clip_ >= (int)anim.clips.size()) return nullptr;
+        const auto& t = anim.clips[(size_t)sel_clip_].target;
+        if (t.type != AnimTarget::FREE_OBJECT) return nullptr;
+        if (t.free_idx < 0 || t.free_idx >= (int)target_objs.size()) return nullptr;
+        return target_objs[(size_t)t.free_idx];
+    };
+    // snapshot a target's base position into its clip
+    auto snap_base = [&](int ci, Hittable* obj) {
+        if (!obj || ci < 0 || ci >= (int)anim.clips.size()) return;
+        anim.clips[(size_t)ci].base_pos =
+            obj->get_center() - obj->anim_offset();
+    };
+
     if (!anim.clips.empty()) {
         if (sel_clip_ >= (int)anim.clips.size()) sel_clip_ = (int)anim.clips.size() - 1;
         if (sel_clip_ < 0) sel_clip_ = 0;
@@ -333,6 +398,7 @@ void NkUI::draw_anim_panel(Animator& anim, const std::vector<std::string>& targe
             if (!target_names.empty()) { t.type = AnimTarget::FREE_OBJECT; t.free_idx = 0; }
             anim.add_clip(t, nc);
             sel_clip_ = (int)anim.clips.size() - 1;
+            snap_base(sel_clip_, tgt_obj());
         }
         if (nk_button_label(ctx_, "DEL CLIP")) {
             anim.remove_clip(sel_clip_);
@@ -362,6 +428,7 @@ void NkUI::draw_anim_panel(Animator& anim, const std::vector<std::string>& targe
                     if (nk_combo_item_label(ctx_, target_names[(size_t)i].c_str(), NK_TEXT_LEFT)) {
                         anim.clips[(size_t)sel_clip_].target.type = AnimTarget::FREE_OBJECT;
                         anim.clips[(size_t)sel_clip_].target.free_idx = i;
+                        snap_base(sel_clip_, target_objs.empty() ? nullptr : target_objs[(size_t)i]);
                     }
                 nk_combo_end(ctx_);
             }
@@ -374,6 +441,7 @@ void NkUI::draw_anim_panel(Animator& anim, const std::vector<std::string>& targe
             AnimTarget t;
             if (!target_names.empty()) { t.type = AnimTarget::FREE_OBJECT; t.free_idx = 0; }
             anim.add_clip(t, nc);
+            snap_base(0, tgt_obj());
         }
     }
 
@@ -396,11 +464,54 @@ void NkUI::draw_anim_panel(Animator& anim, const std::vector<std::string>& targe
                 if (nk_combo_item_label(ctx_, kinterps[i], NK_TEXT_LEFT)) sel_interp_ = i;
             nk_combo_end(ctx_);
         }
+        nk_layout_row_end(ctx_);
 
+        nk_layout_row_begin(ctx_, NK_DYNAMIC, 22, 2);
+        nk_layout_row_push(ctx_, 0.62f);
+        nk_slider_float(ctx_, 0.0f, &key_time_, 10.0f, 0.05f);
+        nk_layout_row_push(ctx_, 0.38f);
         nk_property_float(ctx_, "time", 0.0f, &key_time_, 120.0f, 0.1f, 0.05f);
+        nk_layout_row_end(ctx_);
+        nk_layout_row_dynamic(ctx_, 22, 3);
+        if (nk_button_label(ctx_, "KEY @ CUR")) {
+            key_time_ = anim.global_time;
+            if (key_time_ < 0.0f) key_time_ = 0.0f;
+        }
+        if (nk_button_label(ctx_, "SYNC FROM OBJ")) {
+            Hittable* o = tgt_obj();
+            if (o) {
+                Vec3 v = o->get_center() - anim.clips[(size_t)sel_clip_].base_pos;
+                key_x_ = (float)v.x; key_y_ = (float)v.y; key_z_ = (float)v.z;
+                sel_prop_ = 0; // Position
+            }
+        }
+        if (nk_button_label(ctx_, "KEY @ OBJ")) {
+            Hittable* o = tgt_obj();
+            if (o) {
+                Vec3 v = o->get_center() - anim.clips[(size_t)sel_clip_].base_pos;
+                AnimationClip& c = anim.clips[(size_t)sel_clip_].clip;
+                c.add_keyframe(AnimProperty::Position, key_time_, v,
+                               (InterpolationType)sel_interp_);
+                anim.update_max_time();
+                key_x_ = (float)v.x; key_y_ = (float)v.y; key_z_ = (float)v.z;
+                sel_prop_ = 0;
+            }
+        }
+
         nk_property_float(ctx_, "key x", -50.0f, &key_x_, 50.0f, 0.5f, 0.05f);
         nk_property_float(ctx_, "key y", -50.0f, &key_y_, 50.0f, 0.5f, 0.05f);
         nk_property_float(ctx_, "key z", -50.0f, &key_z_, 50.0f, 0.5f, 0.05f);
+        {
+            Hittable* o = tgt_obj();
+            if (o) {
+                Vec3 v = o->get_center() - anim.clips[(size_t)sel_clip_].base_pos;
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                char ob[128];
+                snprintf(ob, sizeof(ob), "obj offset now: %.2f %.2f %.2f",
+                         (double)v.x, (double)v.y, (double)v.z);
+                nk_label_colored(ctx_, ob, NK_TEXT_LEFT, nk_rgba(150, 150, 150, 255));
+            }
+        }
 
         nk_layout_row_dynamic(ctx_, 22, 2);
         if (nk_button_label(ctx_, "+ KEY")) {
@@ -408,7 +519,6 @@ void NkUI::draw_anim_panel(Animator& anim, const std::vector<std::string>& targe
             c.add_keyframe((AnimProperty)sel_prop_, key_time_,
                            Vec3(key_x_, key_y_, key_z_), (InterpolationType)sel_interp_);
             anim.update_max_time();
-            if (key_time_ >= anim.max_time) key_time_ = 0.0f;
         }
         if (nk_button_label(ctx_, "CLEAR")) {
             anim.clips[(size_t)sel_clip_].clip.clear();
@@ -479,7 +589,9 @@ void NkUI::draw_save_modal(UI& ui, int ww, int wh) {
     nk_end(ctx_);
 }
 
-void NkUI::draw(UI& ui, Animator& anim, const std::vector<std::string>& target_names) {
+void NkUI::draw(UI& ui, Animator& anim,
+                const std::vector<std::string>& target_names,
+                const std::vector<Hittable*>& target_objs) {
     if (!ctx_) return;
     any_active_ = nk_item_is_any_active(ctx_) != 0;
 
@@ -491,7 +603,7 @@ void NkUI::draw(UI& ui, Animator& anim, const std::vector<std::string>& target_n
     }
 
     draw_sidebar(ui, ww, wh);
-    draw_anim_panel(anim, target_names, wh);
+    draw_anim_panel(anim, target_names, target_objs, wh);
     draw_save_modal(ui, ww, wh);
 
     // publish rects (expanded a bit for border/shadow spill)
