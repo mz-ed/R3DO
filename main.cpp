@@ -131,6 +131,29 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         render(0);
         nkui.render();
         display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
+
+        // Gizmo markers: green crosshair on the object under the idle mouse,
+        // red crosshair on the object being dragged.
+        if (ui.render_mode() != 3) {
+            int mx = display.mouse_x(), my = display.mouse_y();
+            if (ui.is_dragging()) {
+                Vec3 c;
+                int sx, sy;
+                if (ui.drag_center(c) && project_point(cam, display.width(),
+                                                       display.height(), c, sx, sy))
+                    display.draw_crosshair(sx, sy, 6, 0xff4444);
+            } else if (!display.is_mouse_down() && !nkui.hit(mx, my) &&
+                       !ui.is_save_dialog_active()) {
+                HitRecord rec;
+                if (pick_at_mouse(grid, cam, display.width(), display.height(),
+                                  mx, my, rec) && rec.hittable) {
+                    int sx, sy;
+                    if (project_point(cam, display.width(), display.height(),
+                                      rec.hittable->get_center(), sx, sy))
+                        display.draw_crosshair(sx, sy, 6, 0x00ff00);
+                }
+            }
+        }
     };
 
     // Per-frame animation application: keys + procedural offsets drive either
@@ -267,6 +290,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         // Panel clicks are deferred and drawn at most once per iteration so a
         // batched press+release cannot fire the same button twice.
         bool ui_click_pending = false;
+        static bool gizmo_dragged = false;
 
         if (display.mouse_clicked()) {
             int mx = display.mouse_x(), my = display.mouse_y();
@@ -274,6 +298,9 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             display.clear_mouse();
             if (nkui.hit(mx, my)) {
                 ui_click_pending = true;
+            } else if (btn == 1 && ui.render_mode() != 3 && ui.start_drag(mx, my)) {
+                gizmo_dragged = true;
+                render_and_ui();
             } else if (btn == 3) {
                 // Right-click: quick-place the last used shape
                 if (ui.place_last_shape()) {
@@ -281,6 +308,14 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     render_and_ui();
                 }
             }
+        }
+
+        // --- Gizmo drag: object follows the mouse on the grab plane ---
+        if (gizmo_dragged && display.is_mouse_down()) {
+            bool shift_held = display.key_held(XK_Shift_L) || display.key_held(XK_Shift_R);
+            ui.drag_update(display.mouse_x(), display.mouse_y(), shift_held);
+            render_and_ui();
+            display.clear_mouse_delta();
         }
 
         // Begin sculpt stroke
@@ -297,7 +332,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         }
 
         // --- Drag look ---
-        if (display.is_mouse_down() &&
+        if (display.is_mouse_down() && !gizmo_dragged &&
             !nkui.hit(display.mouse_press_x(), display.mouse_press_y())) {
             // Sculpt mode: LMB or RMB strokes
             if (ui.render_mode() == 3 && sculpt_mouse_down) {
@@ -329,6 +364,14 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 // Deferred draw below: fires the button exactly once even when
                 // press and release arrive in the same iteration.
                 ui_click_pending = true;
+            } else if (gizmo_dragged) {
+                // Commit the gizmo drag (or a grab with no motion): undo was
+                // snapshotted at grab time and deletion is suppressed so a
+                // plain click on an object never deletes it.
+                gizmo_dragged = false;
+                if (ui.is_dragging()) ui.end_drag();
+                autosave();
+                render_and_ui();
             } else if (ui.render_mode() != 3 && display.mouse_button() == 1) {
                 int dx = display.mouse_x() - display.mouse_press_x();
                 int dy = display.mouse_y() - display.mouse_press_y();
@@ -428,6 +471,13 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     }
                     break;
                 case XK_Escape:
+                    if (gizmo_dragged || ui.is_dragging()) {
+                        ui.cancel_drag();
+                        gizmo_dragged = false;
+                        autosave(); // materialize the restore
+                        render_and_ui();
+                        break;
+                    }
                     running = false;
                     break;
                 case XK_Shift_L:

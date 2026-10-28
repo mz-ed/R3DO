@@ -213,9 +213,50 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
     std::cout << "\r              \r" << std::flush;
 }
 
+// --- Picking helpers ---
+// Ray through an arbitrary pixel, using the same basis/convention as the
+// render loop so gizmo picks land exactly where geometry is drawn.
+static Ray pixel_ray(const Camera& cam, int image_width, int image_height,
+                     double px, double py) {
+    ViewBasis b = make_basis(cam, image_width, image_height);
+    double u = (double)px / (double)(image_width - 1);
+    double v = 1.0 - (double)py / (double)(image_height - 1);
+    if (u < 0) u = 0;
+    if (u > 1) u = 1;
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    return Ray(cam.pos, b.lower_left + u * b.horizontal + v * b.vertical - cam.pos);
+}
+
+Ray mouse_ray(const Camera& cam, int image_width, int image_height, int mx, int my) {
+    return pixel_ray(cam, image_width, image_height, (double)mx + 0.5, (double)my + 0.5);
+}
+
+bool pick_at_mouse(const Grid& grid, const Camera& cam,
+                   int image_width, int image_height,
+                   int mx, int my, HitRecord& rec) {
+    Ray r = pixel_ray(cam, image_width, image_height, (double)mx + 0.5, (double)my + 0.5);
+    return grid.hit(r, 0.001, 1000.0, rec);
+}
+
+// World point -> screen pixel (same projection the billboard renderer uses).
+bool project_point(const Camera& cam, int image_width, int image_height,
+                   const Vec3& p, int& sx, int& sy) {
+    Vec3 fwd = cam.forward();
+    Vec3 upv = cross(cam.right(), fwd);
+    Vec3 rel = p - cam.pos;
+    double depth = dot(rel, fwd);
+    if (depth <= 0) return false;
+    double rx = dot(rel, cam.right());
+    double ry = dot(rel, upv);
+    double vw = VIEWPORT_HEIGHT * image_width / image_height;
+    sx = (int)(image_width / 2.0 + (rx / depth) * FOCAL_LENGTH * image_width / vw + 0.5);
+    sy = (int)(image_height / 2.0 - (ry / depth) * FOCAL_LENGTH * image_height / VIEWPORT_HEIGHT + 0.5);
+    return true;
+}
+
 bool hit_center(const Grid& grid, const Camera& cam,
                 int image_width, int image_height, HitRecord& rec) {
-    ViewBasis b = make_basis(cam, image_width, image_height);
-    Ray r(cam.pos, b.lower_left + 0.5 * b.horizontal + 0.5 * b.vertical - cam.pos);
-    return grid.hit(r, 0.001, 1000.0, rec);
+    return pick_at_mouse(grid, cam, image_width, image_height,
+                         image_width / 2, image_height / 2, rec);
 }

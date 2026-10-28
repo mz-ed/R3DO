@@ -64,6 +64,15 @@ public:
     void center_selected_above();
     void reset_selected();
 
+    // mouse drag gizmo: press on an object to grab it, drag to move on the
+    // camera-facing plane through the grab point, release to commit.
+    bool start_drag(int mx, int my);
+    void drag_update(int mx, int my, bool shift_held);
+    void end_drag() { dragging_ = false; }
+    void cancel_drag();
+    bool is_dragging() const { return dragging_; }
+    bool drag_center(Vec3& out) const; // visual center while dragging
+
     // actions (invoked by NkUI widgets)
     bool place_shape(ShapeType type) { return try_place(type); }
     ShapeType last_shape() const { return last_shape_; }
@@ -122,6 +131,19 @@ private:
     int mesh_idx_ = 0;
 
     int selected_obj_ = -1;
+
+    // --- gizmo drag state ---
+    bool dragging_ = false;
+    struct DragState {
+        int sel = -1;        // index into obj_refs_
+        Vec3 grab_hit;       // world point under cursor at press (visual pose)
+        Vec3 visual0;        // visual center of the object at press
+        bool was_cell = false;
+        bool undo_saved = false; // undo snapshot fires on first real motion
+        int ci = 0, cj = 0, ck = 0;
+    };
+    DragState drag_;
+
     struct ObjRef {
         enum Type { CELL, FREE } type;
         int i = -1, j = -1, k = -1;
@@ -132,6 +154,12 @@ private:
     std::vector<std::string> obj_names_;
 
     void relocate_cell(int sel, const Vec3& newc);
+
+    // gizmo helpers
+    int resolve_pick(void* hit_ptr, const Vec3& hit_p);
+    Hittable* drag_obj();
+    bool nearest_free_cell(const Vec3& target, Vec3& snapped);
+    bool rehome_free(int sel, int i, int j, int k); // free -> cell (owned swap)
 
     std::vector<std::string> undo_stack_;
 

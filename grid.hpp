@@ -134,6 +134,19 @@ public:
         return false;
     }
 
+    // Releases ownership of obj (does not destroy it). Null if not found.
+    Hittable* take_free(Hittable* obj) {
+        for (auto it = free_objects_.begin(); it != free_objects_.end(); ++it) {
+            if (it->get() == obj) {
+                if (obj->is_visible()) visible_count_--;
+                Hittable* raw = it->release();
+                free_objects_.erase(it);
+                return raw;
+            }
+        }
+        return nullptr;
+    }
+
     const std::vector<std::unique_ptr<Hittable>>& free_objects() const { return free_objects_; }
 
     void set_terrain(Mesh* m, const std::string& path = "") { terrain_.reset(m); terrain_path_ = path; }

@@ -6,6 +6,7 @@
 #include "cone.hpp"
 #include "obj_loader.hpp"
 #include "sculpt_mesh.hpp"
+#include "render.hpp"
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -227,6 +228,217 @@ void UI::relocate_cell(int sel, const Vec3& newc) {
         snprintf(buf, sizeof(buf), "free#%d %s", r.free_idx, obj->type_name());
         obj_names_[(size_t)sel] = buf;
     }
+}
+
+// ================= mouse drag gizmo =================
+
+// Map a raycast hit to an index into obj_refs_ by pointer identity.
+// terrain hits carry hittable == nullptr and resolve to -1.
+int UI::resolve_pick(void* hit_ptr, const Vec3& hit_p) {
+    auto* h = static_cast<Hittable*>(hit_ptr);
+    if (!h) return -1;
+    object_list(); // rebuild obj_refs_ so selections stay valid
+    for (int si = 0; si < (int)obj_refs_.size(); si++) {
+        const ObjRef& r = obj_refs_[(size_t)si];
+        if (r.type == ObjRef::FREE) {
+            if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) continue;
+            if (grid.free_objects()[(size_t)r.free_idx].get() == h) return si;
+        } else {
+            if (grid.get(r.i, r.j, r.k) == h) return si;
+        }
+    }
+    // Pointer not in refs (e.g. a cell object parked outside the grid):
+    // fall back to the cell containing the hit point.
+    int i, j, k;
+    if (grid.world_to_cell(hit_p, i, j, k) && grid.get(i, j, k) == h) {
+        object_list(); // reconcile refs with the actual grid contents
+        for (int si = 0; si < (int)obj_refs_.size(); si++) {
+            const ObjRef& r = obj_refs_[(size_t)si];
+            if (r.type == ObjRef::CELL && r.i == i && r.j == j && r.k == k) return si;
+        }
+    }
+    return -1;
+}
+
+// The object currently being dragged (validates against the live scene).
+Hittable* UI::drag_obj() {
+    if (!dragging_ || drag_.sel < 0 || drag_.sel >= (int)obj_refs_.size()) return nullptr;
+    const ObjRef& r = obj_refs_[(size_t)drag_.sel];
+    if (r.type == ObjRef::FREE) {
+        if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) return nullptr;
+        return grid.free_objects()[(size_t)r.free_idx].get();
+    }
+    return grid.get(r.i, r.j, r.k);
+}
+
+// Nearest empty cell (world-space center) to the target point, searched in a
+// small ring around the cell that would contain the target.
+bool UI::nearest_free_cell(const Vec3& target, Vec3& snapped) {
+    int ti, tj, tk;
+    if (!grid.world_to_cell(target, ti, tj, tk)) return false;
+    static const int RAD = 4;
+    double best = 1e30;
+    bool found = false;
+    for (int dj = -RAD; dj <= RAD; dj++)
+        for (int dk = -RAD; dk <= RAD; dk++)
+            for (int di = -RAD; di <= RAD; di++) {
+                int i = ti + di, j = tj + dj, k = tk + dk;
+                if (i < 0 || i >= grid.nx || j < 0 || j >= grid.ny ||
+                    k < 0 || k >= grid.nz) continue;
+                if (grid.get(i, j, k)) continue; // occupied
+                Vec3 c = grid.cell_center(i, j, k);
+                double d = (c.x - target.x) * (c.x - target.x) +
+                           (c.y - target.y) * (c.y - target.y) +
+                           (c.z - target.z) * (c.z - target.z);
+                if (d < best) { best = d; snapped = c; found = true; }
+            }
+    return found;
+}
+
+// Move a free object back into a cell (undoing a drag that left the grid).
+bool UI::rehome_free(int sel, int i, int j, int k) {
+    if (sel < 0 || sel >= (int)obj_refs_.size()) return false;
+    const ObjRef* rr = &obj_refs_[(size_t)sel];
+    if (rr->type != ObjRef::FREE) return false;
+    if (rr->free_idx < 0 || rr->free_idx >= (int)grid.free_objects().size())
+        return false;
+    Hittable* obj = grid.free_objects()[(size_t)rr->free_idx].get();
+    if (!obj || grid.get(i, j, k)) return false; // target cell taken
+    int taken = rr->free_idx;
+    Hittable* raw = grid.take_free(obj);
+    if (!raw) return false;
+    // Free-list indices shifted: fix every other ref after the removal.
+    for (auto& o : obj_refs_)
+        if (o.type == ObjRef::FREE && o.free_idx > taken) o.free_idx--;
+    grid.set(i, j, k, raw);
+    ObjRef& rm = obj_refs_[(size_t)sel];
+    rm.type = ObjRef::CELL;
+    rm.i = i; rm.j = j; rm.k = k;
+    rm.base_center = raw->get_center();
+    char buf[64];
+    snprintf(buf, sizeof(buf), "cell %d,%d,%d %s", i, j, k, raw->type_name());
+    obj_names_[(size_t)sel] = buf;
+    return true;
+}
+
+bool UI::start_drag(int mx, int my) {
+    HitRecord rec;
+    if (!pick_at_mouse(grid, cam, display.width(), display.height(), mx, my, rec))
+        return false;
+    int sel = resolve_pick(rec.hittable, rec.p);
+    if (sel < 0) return false;
+    Hittable* obj = nullptr;
+    {
+        const ObjRef& r = obj_refs_[(size_t)sel];
+        if (r.type == ObjRef::FREE) {
+            if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) return false;
+            obj = grid.free_objects()[(size_t)r.free_idx].get();
+        } else {
+            obj = grid.get(r.i, r.j, r.k);
+        }
+    }
+    if (!obj) return false;
+
+    select_object(sel); // sidebar follows the drag
+    dragging_ = true;
+    drag_.sel = sel;
+    drag_.undo_saved = false;
+    drag_.grab_hit = rec.p - obj->anim_offset(); // base-plane point
+    drag_.visual0 = obj->get_center();
+    const ObjRef& r0 = obj_refs_[(size_t)sel];
+    drag_.was_cell = (r0.type == ObjRef::CELL);
+    drag_.ci = r0.i; drag_.cj = r0.j; drag_.ck = r0.k;
+    return true;
+}
+
+void UI::drag_update(int mx, int my, bool shift_held) {
+    if (!dragging_) return;
+    Hittable* obj = drag_obj();
+    if (!obj) { dragging_ = false; return; }
+    ObjRef& r = obj_refs_[(size_t)drag_.sel];
+
+    Ray ray = mouse_ray(cam, display.width(), display.height(), mx, my);
+    Vec3 n = cam.forward(); // grab plane perpendicular to the view
+    double denom = dot(ray.direction(), n);
+    if (std::abs(denom) < 1e-8) return;
+    double t = dot(drag_.grab_hit - ray.origin(), n) / denom;
+    if (t < 0) return;
+    Vec3 target = ray.origin() + ray.direction() * t; // new grab-point position
+    if (shift_held) target = drag_.grab_hit + Vec3(0, (target.y - drag_.grab_hit.y), 0);
+
+    // Undo snapshot once, on the first frame the grab point actually moves.
+    if (!drag_.undo_saved && (target - drag_.grab_hit).length() > 0.01) {
+        drag_.undo_saved = true;
+        snapshot_for_undo();
+    }
+
+    if (r.type == ObjRef::FREE) {
+        // Move the object by the same delta as the grab point (keeps the
+        // pick offset, so the object slides instead of snapping to cursor).
+        Vec3 vis_target = drag_.visual0 + (target - drag_.grab_hit);
+        obj->translate(vis_target - obj->get_center());
+        r.base_center = obj->get_center() - obj->anim_offset();
+        // Objects that started as cells re-home once their pose is back
+        // inside the grid with an empty cell available.
+        if (drag_.was_cell) {
+            int ci2, cj2, ck2;
+            if (grid.world_to_cell(r.base_center, ci2, cj2, ck2) &&
+                !grid.get(ci2, cj2, ck2) && rehome_free(drag_.sel, ci2, cj2, ck2))
+                return; // next frame continues as a cell drag
+        }
+    } else {
+        Vec3 vis_target = drag_.visual0 + (target - drag_.grab_hit);
+        Vec3 base_target = vis_target - obj->anim_offset();
+        int bi, bj, bk;
+        if (grid.world_to_cell(base_target, bi, bj, bk)) {
+            // Inside the grid: magnetize to the nearest free cell so we
+            // never overwrite an existing occupant.
+            Vec3 snapped;
+            if (!nearest_free_cell(base_target, snapped)) return; // hold
+            base_target = snapped;
+        }
+        relocate_cell(drag_.sel, base_target); // outside grid -> becomes free
+    }
+}
+
+void UI::cancel_drag() {
+    dragging_ = false;
+    Hittable* obj = nullptr;
+    // validate sel after dragging_ is cleared (drag_obj requires dragging_)
+    if (drag_.sel >= 0 && drag_.sel < (int)obj_refs_.size()) {
+        const ObjRef& r = obj_refs_[(size_t)drag_.sel];
+        if (r.type == ObjRef::FREE &&
+            r.free_idx >= 0 && r.free_idx < (int)grid.free_objects().size())
+            obj = grid.free_objects()[(size_t)r.free_idx].get();
+        else obj = grid.get(r.i, r.j, r.k);
+    }
+    if (!obj) { drag_.sel = -1; return; }
+    obj->translate(drag_.visual0 - obj->get_center());
+    ObjRef& r = obj_refs_[(size_t)drag_.sel];
+    r.base_center = obj->get_center() - obj->anim_offset();
+    if (drag_.was_cell && r.type == ObjRef::FREE) {
+        // Dragged outside the grid and then cancelled: re-home into the
+        // original cell if that cell is still empty (restores cell status).
+        int i, j, k;
+        if (grid.world_to_cell(r.base_center, i, j, k))
+            rehome_free(drag_.sel, i, j, k);
+    }
+    drag_.sel = -1;
+}
+
+bool UI::drag_center(Vec3& out) const {
+    if (!dragging_ || drag_.sel < 0 || drag_.sel >= (int)obj_refs_.size()) return false;
+    const ObjRef& r = obj_refs_[(size_t)drag_.sel];
+    Hittable* obj = nullptr;
+    if (r.type == ObjRef::FREE) {
+        if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) return false;
+        obj = grid.free_objects()[(size_t)r.free_idx].get();
+    } else {
+        obj = grid.get(r.i, r.j, r.k);
+    }
+    if (!obj) return false;
+    out = obj->get_center();
+    return true;
 }
 
 void UI::move_selected(const Vec3& d) {

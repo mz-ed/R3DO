@@ -148,7 +148,16 @@ void SculptMesh::remesh_subdivide() {
     rebuild_bvh();
 }
 
-void SculptMesh::translate(const Vec3& d){ for (auto& v: verts_) v.pos+=d; }
+void SculptMesh::translate(const Vec3& d){
+    for (auto& v: verts_) v.pos += d;
+    // Keep the flat BVH in sync without a rebuild: a pure translation shifts
+    // every node box by d and preserves the tree structure, so leaf boxes stay
+    // valid and the mesh stays visible at its new location.
+    for (auto& n : fn2_) {
+        n.bmin[0] += (float)d.x; n.bmin[1] += (float)d.y; n.bmin[2] += (float)d.z;
+        n.bmax[0] += (float)d.x; n.bmax[1] += (float)d.y; n.bmax[2] += (float)d.z;
+    }
+}
 
 static inline void fe(float bmin[3],float bmax[3],const Vec3& p){ float v[3]={float(p.x),float(p.y),float(p.z)}; for(int a=0;a<3;a++){ if(v[a]<bmin[a])bmin[a]=v[a]; if(v[a]>bmax[a])bmax[a]=v[a];}}
 static inline float sa(const float bmin[3],float bmax[3]){ float dx=bmax[0]-bmin[0],dy=bmax[1]-bmin[1],dz=bmax[2]-bmin[2]; return dx*dy+dy*dz+dz*dx;}
