@@ -20,6 +20,7 @@ public:
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
         Ray lr(r.origin() - anim_offset_, r.direction());
+        if (anim_xform_active()) lr = anim_local_ray(r, center);
         Vec3 oc = lr.origin() - center;
         double a = dot(lr.direction(), lr.direction());
         double b = 2.0 * dot(oc, lr.direction());
@@ -33,10 +34,16 @@ public:
             if (t < t_min || t > t_max) return false;
         }
         rec.t = t;
-        rec.p = lr.at(t) + anim_offset_;
         Vec3 outward_normal = (lr.at(t) - center) / radius;
-        rec.set_face_normal(lr, outward_normal);
+        if (anim_xform_active()) {
+            rec.p = anim_world_point(lr.at(t), center);
+            rec.set_face_normal(r, anim_world_normal(outward_normal));
+        } else {
+            rec.p = lr.at(t) + anim_offset_;
+            rec.set_face_normal(lr, outward_normal);
+        }
         rec.color = this->color;
+        anim_color(rec);
         return true;
     }
 };

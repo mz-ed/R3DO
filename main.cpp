@@ -7,14 +7,14 @@
 #include "ui.hpp"
 #include "saver.hpp"
 #include "render.hpp"
-#include "startscreen.hpp"
+#include "ui/startscreen.hpp"
 #include "settings.hpp"
 #include "billboard.hpp"
 #include "overhead.hpp"
 #include "sculpt_engine.hpp"
 #include "sculpt_mesh.hpp"
 #include "animation.hpp"
-#include "nkui.hpp"
+#include "ui/nkui.hpp"
 #include <iostream>
 #include <cmath>
 #include <chrono>
@@ -100,13 +100,23 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                             f->type_name());
             objs.push_back(f.get());
         }
+        // CAMERA pseudo-entry: the combo picks it via index == free count.
+        names.push_back("camera");
+        objs.push_back(nullptr);
+        // Out-of-range clip targets are dead, not "the last object": mark them
+        // so the panel shows a warning instead of silently animating nothing.
+        for (auto& ci : animator.clips)
+            if (ci.target.type == AnimTarget::FREE_OBJECT &&
+                (ci.target.free_idx < 0 ||
+                 ci.target.free_idx >= (int)objs.size()))
+                ci.target.free_idx = -1;
     };
 
     auto refresh_ui = [&]() {
         std::vector<std::string> tnames;
         std::vector<Hittable*> tobjs;
         build_targets(tnames, tobjs);
-        nkui.draw(ui, animator, tnames, tobjs);
+        nkui.draw(ui, animator, cam, tnames, tobjs);
         nkui.render();
     };
 
@@ -117,29 +127,90 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         std::vector<std::string> tnames;
         std::vector<Hittable*> tobjs;
         build_targets(tnames, tobjs);
-        nkui.draw(ui, animator, tnames, tobjs);
+        nkui.draw(ui, animator, cam, tnames, tobjs);
         render(0);
         nkui.render();
         display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
     };
 
+    // Per-frame animation application: keys + procedural offsets drive either
+    // a free object, a grid cell occupant, or the camera pose.
     auto apply_animator = [&]() {
         auto& fobjs = grid.free_objects();
         for (auto& ci : animator.clips) {
-            if (ci.target.type == AnimTarget::FREE_OBJECT &&
-                ci.target.free_idx >= 0 && ci.target.free_idx < (int)fobjs.size()) {
-                Hittable* obj = fobjs[ci.target.free_idx].get();
-                if (obj) obj->set_anim_offset(
-                    ci.clip.evaluate(AnimProperty::Position, animator.global_time));
+            const AnimTarget& tg = ci.target;
+            if (tg.type == AnimTarget::NONE) continue;
+            Hittable* obj = nullptr;
+            if (tg.type == AnimTarget::FREE_OBJECT) {
+                if (tg.free_idx < 0 || tg.free_idx >= (int)fobjs.size()) continue;
+                obj = fobjs[(size_t)tg.free_idx].get();
+            } else if (tg.type == AnimTarget::CELL) {
+                obj = grid.get(tg.i, tg.j, tg.k);
             }
+
+            // First application after a change snaps the pose base.
+            if (!ci.base_snapped) {
+                ci.base_snapped = true;
+                if (tg.type == AnimTarget::CAMERA) {
+                    ci.base_pos = cam.pos;
+                    ci.base_yaw = (float)cam.yaw;
+                    ci.base_pitch = (float)cam.pitch;
+                } else if (obj) {
+                    ci.base_pos = obj->get_center() - obj->anim_offset();
+                }
+            }
+
+            float t = animator.clip_time(ci);
+            Vec3 dp(0, 0, 0), dr(0, 0, 0);
+            for (auto& pm : ci.procs) {
+                if (!pm.enabled) continue;
+                Vec3 v = pm.evaluate(t);
+                if (pm.type == ProceduralType::SpinRotate) dr = dr + v;
+                else dp = dp + v;
+            }
+            dp = dp + ci.clip.evaluate(AnimProperty::Position, t);
+
+            if (tg.type == AnimTarget::CAMERA) {
+                Vec3 drk = ci.clip.evaluate(AnimProperty::Rotation, t);
+                cam.pos = ci.base_pos + dp;
+                cam.yaw = (double)ci.base_yaw + (double)drk.x + (double)dr.x;
+                cam.pitch = (double)ci.base_pitch + (double)drk.y + (double)dr.y;
+                if (cam.pitch > 1.5) cam.pitch = 1.5;
+                if (cam.pitch < -1.5) cam.pitch = -1.5;
+                continue;
+            }
+            if (!obj) continue;
+
+            obj->set_anim_offset(dp);
+            obj->set_anim_rot(ci.clip.evaluate(AnimProperty::Rotation, t) + dr);
+            obj->set_anim_scale(ci.clip.evaluate(AnimProperty::Scale, t));
+            obj->set_anim_tint(ci.clip.evaluate(AnimProperty::Color, t));
         }
+    };
+
+    // Reset only objects clips actually bind to (cheap: a handful of clips).
+    auto reset_clip_targets = [&]() {
+        auto& fobjs = grid.free_objects();
+        for (auto& ci : animator.clips) {
+            Hittable* obj = nullptr;
+            if (ci.target.type == AnimTarget::FREE_OBJECT) {
+                if (ci.target.free_idx < 0 || ci.target.free_idx >= (int)fobjs.size()) continue;
+                obj = fobjs[(size_t)ci.target.free_idx].get();
+            } else if (ci.target.type == AnimTarget::CELL) {
+                obj = grid.get(ci.target.i, ci.target.j, ci.target.k);
+            }
+            if (!obj) continue;
+            obj->set_anim_offset(Vec3(0, 0, 0));
+            obj->set_anim_rot(Vec3(0, 0, 0));
+            obj->set_anim_scale(Vec3(1, 1, 1));
+            obj->set_anim_tint(Vec3(1, 1, 1));
+        }
+        // camera clips: restore base pose lazily; nothing to undo per-object
     };
 
     auto set_panel_visible = [&](bool v) {
         nkui.set_visible(v);
-        if (!v) {
-            for (auto& f : grid.free_objects()) f->set_anim_offset(Vec3(0, 0, 0));
-        }
+        if (!v) reset_clip_targets();
         render_and_ui();
     };
     (void)set_panel_visible;
@@ -155,6 +226,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     bool on_ground = true;
     auto last_frame = std::chrono::steady_clock::now();
     bool running = true;
+    float last_applied_time = -1.0f;  // seek-preview gate (persists across frames)
 
     while (running) {
         bool animating = display.is_mouse_down() ||
@@ -179,10 +251,17 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         if (nkui.visible() && animator.global_playing) {
             animator.update((float)dt);
             apply_animator();
+            last_applied_time = animator.global_time;
             if (!display.mouse_clicked() && !display.mouse_released())
                 render_and_ui();
         } else if (!nkui.visible()) {
-            for (auto& f : grid.free_objects()) f->set_anim_offset(Vec3(0, 0, 0));
+            reset_clip_targets();
+        } else if (last_applied_time != animator.global_time) {
+            // Paused with the panel open: seeking on the timeline previews
+            // the pose immediately instead of waiting for PLAY.
+            apply_animator();
+            last_applied_time = animator.global_time;
+            render_and_ui();
         }
 
         // Panel clicks are deferred and drawn at most once per iteration so a
@@ -260,10 +339,18 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                         bool deleted = false;
                         // Free object (mesh)?
                         if (rec.hittable) {
-                            for (const auto& f : grid.free_objects()) {
-                                if (f.get() == rec.hittable) {
+                            auto& fobjs = grid.free_objects();
+                            for (size_t fi = 0; fi < fobjs.size(); fi++) {
+                                if (fobjs[fi].get() == rec.hittable) {
                                     ui.snapshot_for_undo();
                                     grid.remove_free(rec.hittable);
+                                    // Renumber clips so a deletion never
+                                    // silently re-targets a different object.
+                                    for (auto& ci : animator.clips) {
+                                        if (ci.target.type != AnimTarget::FREE_OBJECT) continue;
+                                        if (ci.target.free_idx == (int)fi) ci.target.free_idx = -1;
+                                        else if (ci.target.free_idx > (int)fi) ci.target.free_idx--;
+                                    }
                                     deleted = true;
                                     break;
                                 }

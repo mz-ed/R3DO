@@ -20,8 +20,10 @@ public:
     void translate(const Vec3& d) override { center += d; }
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override {
-        Vec3 ro = r.origin() - center - anim_offset();
-        Vec3 rd = r.direction();
+        Ray lr(r.origin() - center - anim_offset(), r.direction());
+        if (anim_xform_active()) lr = anim_local_ray(r, center);
+        Vec3 ro = lr.origin() - center;
+        Vec3 rd = lr.direction();
         double half_h = height * 0.5;
         double k = radius / height;
         double A = half_h - ro.y;
@@ -67,9 +69,15 @@ public:
         if (t_hit >= t_max) return false;
 
         rec.t = t_hit;
-        rec.p = r.at(t_hit) + anim_offset();
-        rec.set_face_normal(r, hit_normal);
+        if (anim_xform_active()) {
+            rec.p = anim_world_point(lr.at(t_hit), center);
+            rec.set_face_normal(r, anim_world_normal(hit_normal));
+        } else {
+            rec.p = r.at(t_hit) + anim_offset();
+            rec.set_face_normal(r, hit_normal);
+        }
         rec.color = this->color;
+        anim_color(rec);
         return true;
     }
 };

@@ -89,10 +89,14 @@ public:
         AnimTarget target;
         AnimationClip clip;
         Vec3 base_pos{0, 0, 0};   // target's base position when the target was picked
+        float base_yaw = 0.0f;    // camera pose base (CAMERA targets)
+        float base_pitch = 0.0f;
+        bool base_snapped = false; // first-apply snapshot of the pose base
         float current_time = 0.0f;
         bool playing = false;
         float speed = 1.0f;
         float weight = 1.0f;
+        std::vector<ProceduralModifier> procs;   // additive runtime effects
     };
 
     std::vector<ClipInstance> clips;
@@ -103,6 +107,7 @@ public:
 
     void add_clip(const AnimTarget& target, const AnimationClip& clip);
     void remove_clip(int index);
+    float clip_time(const ClipInstance& c) const;
     void play();
     void pause();
     void stop();

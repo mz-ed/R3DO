@@ -186,11 +186,34 @@ void SculptMesh::rebuild_bvh() {
 }
 
 bool SculptMesh::hit(const Ray& r_in,double t_min,double t_max,HitRecord& rec) const {
+    bool xf = anim_xform_active();
+    Vec3 pivot;
+    if (xf) {
+        if (!fn2_.empty())
+            pivot = Vec3((fn2_[0].bmin[0] + fn2_[0].bmax[0]) * 0.5,
+                         (fn2_[0].bmin[1] + fn2_[0].bmax[1]) * 0.5,
+                         (fn2_[0].bmin[2] + fn2_[0].bmax[2]) * 0.5);
+        else
+            pivot = get_center() - anim_offset();
+    }
     Ray r(r_in.origin() - anim_offset_, r_in.direction());
+    if (xf) r = anim_local_ray(r_in, pivot);
     if (fn2_.empty()||faces_.empty()){
         bool any=false; double cl=t_max; HitRecord tmp;
         for(const auto& f:faces_){ if(ray_tri_intersect(r,verts_[f.v0].pos,verts_[f.v1].pos,verts_[f.v2].pos,t_min,cl,tmp)){ any=true; cl=tmp.t; rec=tmp;}}
-        if(any){ rec.p = rec.p + anim_offset_; rec.color=color_; return true;} return false;
+        if(any){
+            if (xf) {
+                rec.p = anim_world_point(rec.p, pivot);
+                rec.normal = anim_world_normal(rec.normal);
+                rec.set_face_normal(r_in, rec.normal);
+            } else {
+                rec.p = rec.p + anim_offset_;
+            }
+            rec.color=color_;
+            anim_color(rec);
+            return true;
+        }
+        return false;
     }
     struct St{ int n; double t0,t1;};
     int stack[256]; int sp=0; stack[sp++]=0;
@@ -219,7 +242,19 @@ bool SculptMesh::hit(const Ray& r_in,double t_min,double t_max,HitRecord& rec) c
             else { stack[sp++]=n.rightFirst; stack[sp++]=n.leftFirst; }
         }
     }
-    if(any){ rec.p = rec.p + anim_offset_; rec.color=color_; return true;} return false;
+    if(any){
+        if (xf) {
+            rec.p = anim_world_point(rec.p, pivot);
+            rec.normal = anim_world_normal(rec.normal);
+            rec.set_face_normal(r_in, rec.normal);
+        } else {
+            rec.p = rec.p + anim_offset_;
+        }
+        rec.color=color_;
+        anim_color(rec);
+        return true;
+    }
+    return false;
 }
 
 bool SculptMesh::export_obj(const std::string& fn) const {

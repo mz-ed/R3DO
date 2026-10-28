@@ -342,7 +342,12 @@ static inline bool sse_test_packet(
 // --- BVH traversal ---
 bool Mesh::hit(const Ray& r_in, double t_min, double t_max, HitRecord& rec) const {
     if (nodes_.empty()) return false;
+    bool xf = anim_xform_active();
+    Vec3 pivot((nodes_[0].bmin[0] + nodes_[0].bmax[0]) * 0.5,
+               (nodes_[0].bmin[1] + nodes_[0].bmax[1]) * 0.5,
+               (nodes_[0].bmin[2] + nodes_[0].bmax[2]) * 0.5);
     Ray r(r_in.origin() - anim_offset_, r_in.direction());
+    if (xf) r = anim_local_ray(r_in, pivot);
 
     float closest_t = (float)t_max;
     bool hit_any = false;
@@ -424,8 +429,15 @@ bool Mesh::hit(const Ray& r_in, double t_min, double t_max, HitRecord& rec) cons
     }
 
     if (hit_any) {
-        rec.p = rec.p + anim_offset_;
+        if (xf) {
+            rec.p = anim_world_point(rec.p, pivot);
+            rec.normal = anim_world_normal(rec.normal);
+            rec.set_face_normal(r_in, rec.normal);
+        } else {
+            rec.p = rec.p + anim_offset_;
+        }
         rec.color = color;
+        anim_color(rec);
         return true;
     }
     return false;

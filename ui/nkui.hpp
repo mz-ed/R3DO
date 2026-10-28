@@ -9,11 +9,14 @@ class DisplayWin;
 class Animator;
 class UI;
 class Hittable;
+struct Camera;
 struct nk_context;
 
-// Nuklear-drawn UI: docked sidebar (right, non-movable), animation panel
-// (left, T toggles), and modal Save dialog. Region-limited blits keep the
-// raytraced framebuffer visible outside panel areas.
+// Nuklear-drawn UI, split one implementation file per feature:
+//   ui/nkui_core.cpp    - X11 event hook, init/shutdown, frame loop, save dialog
+//   ui/nkui_sidebar.cpp - docked main sidebar (right, non-movable)
+//   ui/nkui_anim.cpp    - animation panel (left, T toggles)
+// Region-limited blits keep the raytraced framebuffer visible outside panels.
 class NkUI {
 public:
     NkUI() = default;
@@ -33,7 +36,7 @@ public:
     bool wants_keys() const { return any_active_ || save_modal_open_; }
     bool hit(int mx, int my) const;
 
-    void draw(UI& ui, Animator& anim,
+    void draw(UI& ui, Animator& anim, Camera& cam,
               const std::vector<std::string>& target_names,
               const std::vector<Hittable*>& target_objs);
 
@@ -49,6 +52,7 @@ private:
     bool visible_ = false;          // animation panel visibility
     bool any_active_ = false;
     bool save_modal_open_ = false;
+    bool hooked_ = false;           // event hook registered
 
     // panel rects, filled during draw
     static const int MAX_PANELS = 8;
@@ -72,9 +76,12 @@ private:
     int sel_interp_ = 0;    // InterpolationType index
     float key_time_ = 0.0f;
     float key_x_ = 0.0f, key_y_ = 0.0f, key_z_ = 0.0f;
+    int cell_i_ = 1, cell_j_ = 1, cell_k_ = 1;   // CELL target picker
+    // params applied to the next modifier attached
+    float proc_amp_ = 0.5f, proc_freq_ = 1.0f, proc_speed_ = 1.0f;
 
     void draw_sidebar(UI& ui, int ww, int wh);
-    void draw_anim_panel(Animator& anim,
+    void draw_anim_panel(Animator& anim, Camera& cam,
                          const std::vector<std::string>& target_names,
                          const std::vector<Hittable*>& target_objs, int wh);
     void draw_save_modal(UI& ui, int ww, int wh);

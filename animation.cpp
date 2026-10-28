@@ -78,6 +78,10 @@ void AnimationClip::add_keyframe(AnimProperty prop, float time, const Vec3& val,
 Vec3 AnimationClip::evaluate(AnimProperty prop, float time) const {
     for (const auto& t : tracks)
         if (t.property == prop) return t.evaluate(time);
+    // Missing track = identity for that property, so callers can apply the
+    // result blindly: position/rotation offsets are zero, scale/tint are 1.
+    if (prop == AnimProperty::Scale || prop == AnimProperty::Color)
+        return Vec3(1, 1, 1);
     return Vec3(0, 0, 0);
 }
 
@@ -130,6 +134,17 @@ void Animator::add_clip(const AnimTarget& target, const AnimationClip& clip) {
 void Animator::remove_clip(int index) {
     if (index >= 0 && index < (int)clips.size())
         clips.erase(clips.begin() + index);
+}
+
+// Per-clip playback time: looping clips wrap by their own duration, one-shot
+// clips clamp at their end and hold their final pose.
+float Animator::clip_time(const ClipInstance& c) const {
+    if (c.clip.duration <= 0.0f) return 0.0f;
+    if (c.clip.loop) {
+        float t = std::fmod(global_time, c.clip.duration);
+        return (t < 0.0f) ? t + c.clip.duration : t;
+    }
+    return global_time < c.clip.duration ? global_time : c.clip.duration;
 }
 
 void Animator::play() {
