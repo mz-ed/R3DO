@@ -171,15 +171,16 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 obj = grid.get(tg.i, tg.j, tg.k);
             }
 
-            // First application after a change snaps the pose base.
+            // Camera clips snap their pose base on first apply. Object clips
+            // do NOT bake a base: their Position offsets stay relative to the
+            // object's live base center, so drag / buttons / UI edits share
+            // the same position value with the animation.
             if (!ci.base_snapped) {
                 ci.base_snapped = true;
                 if (tg.type == AnimTarget::CAMERA) {
                     ci.base_pos = cam.pos;
                     ci.base_yaw = (float)cam.yaw;
                     ci.base_pitch = (float)cam.pitch;
-                } else if (obj) {
-                    ci.base_pos = obj->get_center() - obj->anim_offset();
                 }
             }
 

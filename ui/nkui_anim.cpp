@@ -73,12 +73,16 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
         if (t.free_idx < 0 || t.free_idx >= (int)target_objs.size()) return nullptr;
         return target_objs[(size_t)t.free_idx];
     };
-    // snapshot a target's base position into its clip
-    auto snap_base = [&](int ci, Hittable* obj) {
-        if (!obj || ci < 0 || ci >= (int)anim.clips.size()) return;
-        anim.clips[(size_t)ci].base_pos =
-            obj->get_center() - obj->anim_offset();
-        anim.clips[(size_t)ci].base_snapped = true;
+    // snapshot a camera clip's pose base; object clips use the live base so
+    // their keys stay linked to drag / button / UI position edits.
+    auto snap_base = [&](int ci) {
+        if (ci < 0 || ci >= (int)anim.clips.size()) return;
+        auto& c = anim.clips[(size_t)ci];
+        if (c.target.type != AnimTarget::CAMERA) return;
+        c.base_pos = cam.pos;
+        c.base_yaw = (float)cam.yaw;
+        c.base_pitch = (float)cam.pitch;
+        c.base_snapped = true;
     };
 
     if (!anim.clips.empty()) {
@@ -90,7 +94,7 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
             if (!target_names.empty()) { t.type = AnimTarget::FREE_OBJECT; t.free_idx = 0; }
             anim.add_clip(t, nc);
             sel_clip_ = (int)anim.clips.size() - 1;
-            snap_base(sel_clip_, tgt_obj());
+            snap_base(sel_clip_);
         }
         if (nk_button_label(ctx_, "DEL CLIP")) {
             anim.remove_clip(sel_clip_);
@@ -128,8 +132,7 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
                     } else {
                         t.type = AnimTarget::FREE_OBJECT;
                         t.free_idx = i;
-                        snap_base(sel_clip_,
-                                  target_objs.empty() ? nullptr : target_objs[(size_t)i]);
+                        snap_base(sel_clip_);
                     }
                 }
             nk_combo_end(ctx_);
@@ -179,7 +182,7 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
             if (!target_names.empty()) { t.type = AnimTarget::FREE_OBJECT; t.free_idx = 0; }
             anim.add_clip(t, nc);
             sel_clip_ = 0;
-            snap_base(0, tgt_obj());
+            snap_base(0);
         }
     }
 
@@ -229,7 +232,9 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
             }
             Hittable* o = tgt_obj();
             if (!o) return;
-            Vec3 v = o->get_center() - cli.base_pos;
+            // Live base: the object's current offset IS its animation value
+            // (drag/buttons/base edits move the base, not the offset).
+            Vec3 v = o->anim_offset();
             key_x_ = (float)v.x; key_y_ = (float)v.y; key_z_ = (float)v.z;
             sel_prop_ = 0; // Position
         };
@@ -260,10 +265,10 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
                 if (sel_prop_ == 1) ref = Vec3((float)(cam.yaw - (double)cli.base_yaw),
                                                (float)(cam.pitch - (double)cli.base_pitch), 0);
                 else ref = cam.pos - cli.base_pos;
-                src = "cam now";
+                src = "cam offset now";
             } else if (Hittable* o = tgt_obj()) {
-                ref = o->get_center() - cli.base_pos;
-                src = "obj offset now";
+                ref = o->anim_offset();
+                src = "offset now (live base)";
             } else src = nullptr;
             if (src) {
                 nk_layout_row_dynamic(ctx_, 16, 1);
@@ -271,6 +276,16 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
                 snprintf(ob, sizeof(ob), "%s: %.2f %.2f %.2f",
                          src, (double)ref.x, (double)ref.y, (double)ref.z);
                 nk_label_colored(ctx_, ob, NK_TEXT_LEFT, nk_rgba(150, 150, 150, 255));
+            }
+            // Shared world position of the bound object: updates live from
+            // drag, buttons and the sidebar position editor.
+            if (Hittable* o = tgt_obj()) {
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                char wb[112];
+                Vec3 wp = o->get_center();
+                snprintf(wb, sizeof(wb), "world pos: %.2f %.2f %.2f",
+                         (double)wp.x, (double)wp.y, (double)wp.z);
+                nk_label_colored(ctx_, wb, NK_TEXT_LEFT, nk_rgba(97, 175, 239, 255));
             }
         }
 

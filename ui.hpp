@@ -73,6 +73,11 @@ public:
     bool is_dragging() const { return dragging_; }
     bool drag_center(Vec3& out) const; // visual center while dragging
 
+    // shared world position (read/write) — the sidebar editor and animation
+    // panel both resolve through these so every source shares one value
+    bool selected_pos(Vec3& out) const;
+    void set_selected_pos(const Vec3& p);
+
     // actions (invoked by NkUI widgets)
     bool place_shape(ShapeType type) { return try_place(type); }
     ShapeType last_shape() const { return last_shape_; }

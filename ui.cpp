@@ -441,6 +441,50 @@ bool UI::drag_center(Vec3& out) const {
     return true;
 }
 
+// Live world position of the selected object (visual pose, offset included).
+bool UI::selected_pos(Vec3& out) const {
+    if (selected_obj_ < 0 || selected_obj_ >= (int)obj_refs_.size()) return false;
+    const ObjRef& r = obj_refs_[(size_t)selected_obj_];
+    Hittable* obj = nullptr;
+    if (r.type == ObjRef::FREE) {
+        if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) return false;
+        obj = grid.free_objects()[(size_t)r.free_idx].get();
+    } else {
+        obj = grid.get(r.i, r.j, r.k);
+    }
+    if (!obj) return false;
+    out = obj->get_center();
+    return true;
+}
+
+// Teleport the selected object's visual center to p (shared with drag,
+// buttons and animation: the base moves, current key offsets ride along).
+void UI::set_selected_pos(const Vec3& p) {
+    if (selected_obj_ < 0 || selected_obj_ >= (int)obj_refs_.size()) return;
+    ObjRef& r = obj_refs_[(size_t)selected_obj_];
+    if (r.type == ObjRef::FREE) {
+        if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size()) return;
+        Hittable* obj = grid.free_objects()[(size_t)r.free_idx].get();
+        if (!obj) return;
+        obj->translate(p - obj->get_center());
+        r.base_center = obj->get_center() - obj->anim_offset();
+        show_msg("Position set");
+        return;
+    }
+    Hittable* obj = grid.get(r.i, r.j, r.k);
+    if (!obj) return;
+    Vec3 base_target = p - obj->anim_offset();
+    int bi, bj, bk;
+    if (grid.world_to_cell(base_target, bi, bj, bk)) {
+        // inside the grid: keep the never-overwrite rule
+        Vec3 snapped;
+        if (!nearest_free_cell(base_target, snapped)) return; // no free cell
+        base_target = snapped;
+    }
+    relocate_cell(selected_obj_, base_target);
+    show_msg("Position set");
+}
+
 void UI::move_selected(const Vec3& d) {
     if (selected_obj_ < 0 || selected_obj_ >= (int)obj_refs_.size()) return;
     ObjRef& r = obj_refs_[(size_t)selected_obj_];

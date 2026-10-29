@@ -153,6 +153,26 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
             if (nk_button_label(ctx_, "+Y")) { ui.move_selected(Vec3(0, 0.5, 0)); }
             if (nk_button_label(ctx_, "-Y")) { ui.move_selected(Vec3(0, -0.5, 0)); }
 
+            // Shared world position: drag, move buttons and the animation
+            // panel all flow through the same live base. Editing here moves
+            // the object (and the animation follows automatically). Cells
+            // re-home into the nearest free cell like the drag gizmo.
+            Vec3 wp;
+            if (ui.selected_pos(wp)) {
+                float px = (float)wp.x, py = (float)wp.y, pz = (float)wp.z;
+                nk_layout_row_dynamic(ctx_, 20, 3);
+                nk_property_float(ctx_, "pos x", -100.0f, &px, 100.0f, 0.25f, 0.05f);
+                nk_property_float(ctx_, "pos y", -100.0f, &py, 100.0f, 0.25f, 0.05f);
+                nk_property_float(ctx_, "pos z", -100.0f, &pz, 100.0f, 0.25f, 0.05f);
+                if (px != (float)wp.x || py != (float)wp.y || pz != (float)wp.z)
+                    ui.set_selected_pos(Vec3((double)px, (double)py, (double)pz));
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                char posl[96];
+                snprintf(posl, sizeof(posl), "pos %.2f %.2f %.2f",
+                         (double)wp.x, (double)wp.y, (double)wp.z);
+                nk_label_colored(ctx_, posl, NK_TEXT_LEFT, nk_rgba(97, 175, 239, 255));
+            }
+
             nk_layout_row_dynamic(ctx_, 18, 1);
             if (nk_button_label(ctx_, "Center Above")) { ui.center_selected_above(); }
         }
