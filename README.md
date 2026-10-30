@@ -1,6 +1,47 @@
 # R3DO — Interactive 3D Ray Tracer
 
-A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 grid of abstract objects (spheres, boxes) using keyboard and mouse controls.
+A real-time CPU ray tracer rendered into an X11 window. Build scenes in a 10×10×10
+voxel grid (spheres, boxes, cylinders, cones, meshes, sculptable terrain), animate
+them with keyframes or procedural modifiers, and drag objects directly in the viewport.
+
+![Start screen](docs/img/startscreen.png)
+
+## Features
+
+- **Ray traced scene view** — DDA voxel traversal keeps ray casts fast; directional
+  diffuse lighting with gamma-corrected output.
+- **Mouse drag gizmo** — press left-click on any object to grab it: it follows the
+  mouse on the camera-facing plane, cell objects magnetize to the nearest free cell,
+  and objects dragged outside the grid automatically become free objects (and
+  re-home when dragged back). Empty-space drags still rotate the camera.
+- **Shared position** — drag, move buttons and the sidebar `pos x/y/z` editor all
+  move the same live base. The animation system reads that base every frame, so any
+  edit changes where an animation plays from without breaking your keys.
+- **Animation system** — keyframe clips per target with Position / Rotation / Scale /
+  Color tracks, linear and eased interpolation, per-clip looping, a scrub timeline,
+  and procedural modifiers (**Sine Bob**, **Spin**, **Noise Shake**) you can stack on
+  top of keys. Targets can be free objects, grid cells, or the **camera** itself.
+
+![Editor in raytrace mode with sidebar](docs/img/editor-raytrace.png)
+
+- **Animation panel** — press `T` to open. Play / pause / stop / loop, playback
+  speed, timeline scrub (previews the pose while paused), key capture straight from
+  the live scene, per-track listing, and the target picker with a camera entry and
+  cell-target mode.
+
+![Animation panel](docs/img/editor-animpanel.png)
+
+- **Render modes** (cycle with `B` or the sidebar combo):
+  - **Raytrace** — full path through the grid; all animation properties apply.
+  - **Billboard** — fast 2D sprite projection (circle / diamond / triangle per shape).
+  - **Overhead** — top-down map of the grid with free-object markers.
+
+![Overhead mode](docs/img/editor-overhead.png)
+![Billboard mode](docs/img/editor-billboard.png)
+
+- **Sculpt mode** — brush-based mesh sculpting (Draw / Inflate / Smooth-style
+  brushes, invert, radius & strength sliders, remesh, terrain load), with its own
+  undo stack.
 
 ## Controls
 
@@ -10,72 +51,101 @@ A real-time CPU ray tracer rendered into an X11 window. Navigate a 10×10×10 gr
 | A/D | Strafe left/right |
 | Q/E | Move up/down |
 | ← → ↑ ↓ | Look around |
-| Space | Full-quality re-render (4 samples/px) |
-| Esc | Quit |
+| B | Cycle render mode (Raytrace → Billboard → Overhead → Sculpt → Static) |
+| T | Toggle the animation panel |
+| G | Toggle ground mode |
+| Space | Full-quality re-render |
+| Ctrl+Z / Ctrl+Y | Undo / redo scene (sculpt mode has its own) |
+| Esc | Quit — while dragging an object: cancel the drag |
 | F11 | Toggle windowed mode |
-| **Mouse** | Click side menu buttons |
-| **Left Click (scene)** | Remove object under crosshair |
-| **Left Drag (scene)** | Look around (mouse look) |
+| **Left click on object** | Grab and drag it (gizmo) |
+| **Shift + drag** | Vertical-only movement |
+| **Left drag on empty space** | Look around (mouse look) |
+| **Left click empty space** | Delete the object under the center crosshair |
+| **Right click** | Quick-place the last used shape |
+| **Right drag (sculpt mode)** | Sculpt stroke (inverts the brush) |
+| Alt+Shift | Toggle mouse capture |
 
-The program starts at the resolution saved in `settings.cfg` (or 1920×1080 by default). Press F11 to toggle fullscreen. Use the **Settings** button on the start screen to change the resolution.
-
-## Interactive Menu
-
-A side panel on the right provides:
-
-- **Add Sphere / Box / Cylinder / Cone** — places the chosen shape 3 units ahead in the first empty grid cell
-- **Clear All** — removes all objects from the grid
-- Object counter and camera position display
-
-New objects cycle through a 10-color palette.
-
-## Crosshair
-
-A green `+` at screen center lets you target objects. Click anywhere in the 3D view (left of the menu panel) to delete the object under the crosshair. The crosshair persists across all renders and movements.
+The program starts at the resolution saved in `settings.cfg` (or 1920×1080 by
+default). Use the **Settings** button on the start screen to change it.
 
 ## Start Screen
 
-On launch you'll see a start screen with **New Scene** (empty grid) and **Load Scene** (pick from existing saves). The default autosave (`saves/default.r3do`) is no longer loaded automatically — use Load to pick any save or New to start fresh.
+On launch you get **New Scene**, **Load Scene**, **Sculpt** (jumps straight into
+sculpt mode) and **Settings**. **Load Scene** lists all `.r3do` files found in
+`saves/`; the default autosave is not loaded automatically.
 
 ## Save System
 
-All scene changes are automatically saved to `saves/default.r3do` after every add, remove, or clear operation.
+All scene changes are automatically saved to `saves/default.r3do`. To snapshot a
+scene, click **Save** name the file; loads are picked from the start screen.
+Scene files store objects, transforms, and animation clips.
 
-To manually snapshot a scene, click **Save** in the side panel and type a name in the terminal. The file is written to `saves/<name>.r3do`. On the start screen, **Load Scene** lists all `.r3do` files found in the `saves/` directory.
+## Animation Workflow
+
+1. Press `T`, then `+ NEW CLIP`.
+2. Pick a target in the combo: a free object, `cell i,j,k` (enable the cell
+   checkbox), or `camera`.
+3. Set the key time with the slider, adjust key x/y/z (or press **SYNC FROM TGT**
+   / **KEY @ TGT** to capture the target's live pose), then `+ KEY`.
+4. `PLAY` to watch; pause and scrub the timeline to preview any time.
+5. Stack procedural modifiers (`+ SINE / + SPIN / + SHAKE`) for continuous motion.
+
+Because keys are stored as offsets from the object's *live* base position, you can
+keep moving the object with the drag gizmo or the position editor at any time — the
+whole animation travels with it. The world position is shown in both the sidebar
+(`pos` fields) and the animation panel (`world pos:` readout).
 
 ## Build
 
 Requires libx11-dev.
 
 ```sh
-g++ -std=c++11 -O3 main.cpp display.cpp ui.cpp saver.cpp render.cpp startscreen.cpp settings.cpp -lX11 -o renderer
-./renderer
+make -j4
+./R3DO
 ```
 
 ## How it works
 
-- **DDA traversal**: rays step through the grid using a 3D Digital Differential Analyzer, visiting only the cells along the ray path (~6–12 per ray) instead of checking all 1000 cells.
-- **Primitives**: spheres (`sphere.hpp`) and axis-aligned boxes (`box.hpp`) placed in grid cells — 10 spheres and 3 boxes by default.
-- **Lighting**: simple directional diffuse shading with a single light source, gamma-corrected (sqrt) output.
-- **Multi-sampling**: low quality (1 sample/px) during movement for speed; full quality (4 samples/px) on Space.
+- **DDA traversal** (`grid.hpp`): rays step cell-by-cell along the voxel grid using
+  a 3D Digital Differential Analyzer with 4×4×4 chunk skip flags; free objects are
+  always tested first so off-grid placement still renders.
+- **Primitives**: spheres, axis-aligned boxes, capped cylinders/cones, triangle
+  meshes with a SAH BVH, and sculptable meshes (flat BVH kept in sync on moves).
+- **Animation** (`animation.hpp/cpp`): clips hold typed tracks with per-key
+  interpolation; `ClipInstance` binds a clip to a free object, cell or camera and
+  stacks procedural modifiers; playback speed and loop semantics are per clip.
+- **Transforms** (`hittable.hpp`): per-object animated offset + Euler rotation +
+  scale + color tint applied in every shape's `hit()` with an identity fast path.
+- **UI**: Nuklear drawn into the same X11 framebuffer (`ui/` — core event hook,
+  sidebar, animation panel, start screens).
+- **Multi-sampling**: low quality (1 sample/px) during movement; full quality
+  (4 samples/px) on Space per `settings.cfg`.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `main.cpp` | Entry point, game loop, event handling |
-| `render.hpp` / `render.cpp` | Ray tracing (ray_color, render_scene, hit_center) |
-| `startscreen.hpp` / `startscreen.cpp` | Start screen, load screen, save listing, settings screen |
-| `settings.hpp` / `settings.cpp` | Resolution settings, load/save from `settings.cfg` |
-| `camera.hpp` | Camera with WASD movement and yaw/pitch rotation |
-| `display.hpp` / `display.cpp` | X11 window wrapper (keyboard, mouse, pixels, text) |
-| `v3.hpp` | 3D vector math (Vec3, operators, cross, dot, unit) |
-| `ray.hpp` | Ray class (origin, direction, at(t)) |
-| `hittable.hpp` | Abstract Hittable interface + HitRecord |
-| `sphere.hpp` | Sphere primitive (quadratic intersection) |
-| `box.hpp` | Axis-aligned box primitive (slab method) |
-| `cylinder.hpp` | Y-aligned capped cylinder |
-| `cone.hpp` | Y-aligned capped cone |
-| `grid.hpp` | 10×10×10 grid with DDA ray traversal |
-| `ui.hpp` / `ui.cpp` | Side-panel menu (add sphere/box, clear) |
-| `saver.hpp` / `saver.cpp` | Save/load scene to .r3do files |
+| `main.cpp` | Entry point, game loop, drag gizmo wiring, animator application |
+| `animation.hpp` / `animation.cpp` | Clips, keyframes, interpolation, modifiers |
+| `ui/nkui.hpp` / `ui/nkui_core.cpp` | Nuklear setup, event hook, frame compositing |
+| `ui/nkui_sidebar.cpp` | Sidebar (add, sculpt, objects, actions, settings) |
+| `ui/nkui_anim.cpp` | Animation panel (playback, keys, targets, modifiers) |
+| `ui/startscreen.cpp` | Start / load / settings screens |
+| `ui.hpp` / `ui.cpp` | Scene state, move/select, drag gizmo, save dialog |
+| `render.hpp` / `render.cpp` | Ray tracing, picking (`pick_at_mouse`) |
+| `grid.hpp` | Voxel grid with DDA traversal, cell management, terrain |
+| `hittable.hpp` | Hittable base incl. animated transforms |
+| `sphere.hpp` `box.hpp` `cylinder.hpp` `cone.hpp` | Primitives |
+| `mesh.cpp` / `mesh.hpp` | OBJ meshes with SAH BVH |
+| `sculpt_mesh.cpp` / `sculpt_engine.cpp` | Sculptable meshes and brush engine |
+| `saver.hpp` / `saver.cpp` | Scene save/load `.r3do` |
+| `display.hpp` / `display.cpp` | X11 window, input, MIT-SHM framebuffer |
+| `settings.hpp` / `settings.cpp` | Resolution settings persistence |
+
+## Known limitations
+
+- Billboard and Overhead previews show position animation only — rotation, scale
+  and color tint apply in Raytrace mode.
+- Cell-bound objects animate within the grid hull; poses pushed outside the grid
+  hull are invisible in raytrace mode (free objects have no such limit).
