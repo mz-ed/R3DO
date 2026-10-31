@@ -29,7 +29,7 @@ void UI::update_labels() {
     // Keep the Nuklear combo selection in sync with the active render mode
     // (the sidebar label is looked up via mode_label_idx_).
     if (render_mode_ < 0) render_mode_ = 0;
-    if (render_mode_ > 4) render_mode_ = 4;
+    if (render_mode_ >= mode_count()) render_mode_ = mode_count() - 1;
     mode_label_idx_ = render_mode_;
 }
 

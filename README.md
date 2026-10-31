@@ -31,17 +31,20 @@ them with keyframes or procedural modifiers, and drag objects directly in the vi
 
 ![Animation panel](docs/img/editor-animpanel.png)
 
-- **Render modes** (cycle with `B` or the sidebar combo):
+- **Render modes** (cycle with `B` or the sidebar combo) are a data-driven
+  registry in `modes/` (`MODES[]` in `modes.cpp`); add a mode by appending one
+  table entry and writing one render function — the sidebar, cycling and save
+  indices follow automatically. Built-in modes:
   - **Raytrace** — full path through the grid; all animation properties apply.
   - **Billboard** — fast 2D sprite projection (circle / diamond / triangle per shape).
   - **Overhead** — top-down map of the grid with free-object markers.
+  - **Static** — camera-relative sprite projection with zero interaction.
+  - **Sculpt** — brush-based mesh sculpting (Draw / Inflate / Smooth-style
+    brushes, invert, radius & strength sliders, remesh, terrain load), with its
+    own undo stack. Subsequent modes in the list are non-sculpt editors.
 
 ![Overhead mode](docs/img/editor-overhead.png)
 ![Billboard mode](docs/img/editor-billboard.png)
-
-- **Sculpt mode** — brush-based mesh sculpting (Draw / Inflate / Smooth-style
-  brushes, invert, radius & strength sliders, remesh, terrain load), with its own
-  undo stack.
 
 ## Controls
 
@@ -124,24 +127,31 @@ make -j4
 
 ## Files
 
+Sources live in six folders (`src/`, `anim/`, `shapes/`, `modes/`, `sculpt/`,
+`ui/`); the Makefile passes one `-I` per folder so includes stay bare
+(`"grid.hpp"`) and files can move without touching include lines.
+
 | File | Role |
 |------|------|
-| `main.cpp` | Entry point, game loop, drag gizmo wiring, animator application |
-| `animation.hpp` / `animation.cpp` | Clips, keyframes, interpolation, modifiers |
-| `ui/nkui.hpp` / `ui/nkui_core.cpp` | Nuklear setup, event hook, frame compositing |
+| `src/main.cpp` | Entry point, game loop, drag gizmo wiring, animator application |
+| `anim/animation.hpp` / `.cpp` | Clips, keyframes, interpolation, modifiers |
+| `ui/nkui.hpp` / `nkui_core.cpp` | Nuklear setup, event hook, frame compositing |
 | `ui/nkui_sidebar.cpp` | Sidebar (add, sculpt, objects, actions, settings) |
 | `ui/nkui_anim.cpp` | Animation panel (playback, keys, targets, modifiers) |
 | `ui/startscreen.cpp` | Start / load / settings screens |
-| `ui.hpp` / `ui.cpp` | Scene state, move/select, drag gizmo, save dialog |
-| `render.hpp` / `render.cpp` | Ray tracing, picking (`pick_at_mouse`) |
-| `grid.hpp` | Voxel grid with DDA traversal, cell management, terrain |
-| `hittable.hpp` | Hittable base incl. animated transforms |
-| `sphere.hpp` `box.hpp` `cylinder.hpp` `cone.hpp` | Primitives |
-| `mesh.cpp` / `mesh.hpp` | OBJ meshes with SAH BVH |
-| `sculpt_mesh.cpp` / `sculpt_engine.cpp` | Sculptable meshes and brush engine |
-| `saver.hpp` / `saver.cpp` | Scene save/load `.r3do` |
-| `display.hpp` / `display.cpp` | X11 window, input, MIT-SHM framebuffer |
-| `settings.hpp` / `settings.cpp` | Resolution settings persistence |
+| `ui/ui.hpp` / `ui/ui.cpp` | Scene state, move/select, drag gizmo, save dialog |
+| `ui/sculpt_ui.cpp` | Sculpt-mode overlay panel |
+| `src/render.hpp` / `.cpp` | Shared raytrace engine, picking (`pick_at_mouse`) |
+| `src/render_modes` → `modes/render_modes.hpp` + `modes.cpp` | Display-mode registry (`MODES[]`); order is the save-format index: 0 Raytrace, 1 Billboard, 2 Overhead, 3 Sculpt, 4 Static |
+| `modes/billboard.cpp` `modes/overhead.cpp` `modes/static.cpp` | 2D editor previews; each mode is one render function plus a `uses_mouse_for_strokes` flag |
+| `src/grid.hpp` | Voxel grid with DDA traversal, cell management, terrain |
+| `src/hittable.hpp` | Hittable base incl. animated transforms |
+| `shapes/sphere.hpp` `box.hpp` `cylinder.hpp` `cone.hpp` | Primitives |
+| `shapes/mesh.cpp` / `mesh.hpp` | OBJ meshes with SAH BVH; `shapes/obj_loader.*` OBJ parsing |
+| `sculpt/sculpt_mesh.cpp` / `sculpt_engine.cpp` | Sculptable meshes and brush engine (`sculpt/brush.hpp`) |
+| `src/saver.hpp` / `.cpp` | Scene save/load `.r3do` |
+| `src/display.hpp` / `.cpp` | X11 window, input, MIT-SHM framebuffer |
+| `src/settings.hpp` / `.cpp` | Resolution settings persistence |
 
 ## Known limitations
 

@@ -1,11 +1,13 @@
-ui/startscreen.o: ui/startscreen.cpp ui/startscreen.hpp display.hpp \
- grid.hpp hittable.hpp v3.hpp ray.hpp box.hpp mesh.hpp settings.hpp
+ui/startscreen.o: ui/startscreen.cpp ui/startscreen.hpp src/display.hpp \
+ src/grid.hpp src/hittable.hpp src/v3.hpp src/ray.hpp shapes/box.hpp \
+ src/hittable.hpp shapes/mesh.hpp src/settings.hpp
 ui/startscreen.hpp:
-display.hpp:
-grid.hpp:
-hittable.hpp:
-v3.hpp:
-ray.hpp:
-box.hpp:
-mesh.hpp:
-settings.hpp:
+src/display.hpp:
+src/grid.hpp:
+src/hittable.hpp:
+src/v3.hpp:
+src/ray.hpp:
+shapes/box.hpp:
+src/hittable.hpp:
+shapes/mesh.hpp:
+src/settings.hpp:

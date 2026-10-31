@@ -1,7 +1,7 @@
 #ifndef ANIMATION_H
 #define ANIMATION_H
 
-#include "v3.hpp"
+#include "/home/kali/R3DO/src/v3.hpp"
 #include <vector>
 #include <string>
 #include <map>

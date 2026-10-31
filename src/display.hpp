@@ -34,8 +34,14 @@ class DisplayWin {
     bool shm_ok_ = false;
     bool shm_attached_ = false;
 
+    // regions update() leaves untouched (UI panels painted by Nuklear)
+    static const int MAX_SKIP = 8;
+    int skip_n_ = 0;
+    int skip_x_[MAX_SKIP], skip_y_[MAX_SKIP], skip_w_[MAX_SKIP], skip_h_[MAX_SKIP];
+
     void free_image();
     void alloc_image(int new_w, int new_h);
+    void push_rect(int sx, int sy, int sw, int sh);
 
 public:
     DisplayWin(int width, int height, const char* title);
@@ -67,6 +73,10 @@ public:
 
     void set_pixel(int x, int y, unsigned int rgb);
     void update();
+    // Push only the framebuffer regions OUTSIDE the given rects (the Nuklear
+    // panels live directly on the window and would otherwise be wiped).
+    void set_update_skip(const int* xs, const int* ys, const int* ws, const int* hs, int n);
+    void clear_update_skip();
     void process_events();
     bool wait_event(int timeout_ms);
     void draw_text(int x, int y, const char* text, unsigned long color);

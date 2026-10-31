@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <cstring>
 
-static const char* mode_names[] = {"Raytrace", "Billboard", "Overhead", "Sculpt", "Static"};
 static const char* brush_names[] = {
     "Draw", "Inflate", "Deflate", "Carve", "Implode", "Smooth",
     "Flatten", "Grab", "PushPull", "Pinch", "Crease", "Clay", "Blob"
@@ -200,10 +199,11 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
     if (nk_button_label(ctx_, sec_settings_ ? "-  SETTINGS" : "+  SETTINGS")) sec_settings_ = !sec_settings_;
     if (sec_settings_) {
         nk_layout_row_dynamic(ctx_, 20, 1);
-        if (nk_combo_begin_label(ctx_, mode_names[ui.mode_label_idx_], nk_vec2((float)UI::SIDEBAR_W - 30, 130))) {
+        if (nk_combo_begin_label(ctx_, get_mode(ui.mode_label_idx_).name,
+                                 nk_vec2((float)UI::SIDEBAR_W - 30, 130))) {
             nk_layout_row_dynamic(ctx_, 18, 1);
-            for (int i = 0; i < 5; i++)
-                if (nk_combo_item_label(ctx_, mode_names[i], NK_TEXT_LEFT))
+            for (int i = 0; i < mode_count(); i++)
+                if (nk_combo_item_label(ctx_, MODES[i].name, NK_TEXT_LEFT))
                     ui.set_render_mode(i);
             nk_combo_end(ctx_);
         }

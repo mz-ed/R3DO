@@ -42,6 +42,13 @@ public:
 
     nk_context* ctx() { return ctx_; }
 
+    // Count + published rects of the live panels (incl. popups/modals) —
+    // the renderer needs them so it never writes UI-underneath pixels.
+    int panel_rects(const int*& px, const int*& py, const int*& pw, const int*& ph) const {
+        px = px_; py = py_; pw = pw_; ph = ph_;
+        return panel_n_;
+    }
+
 private:
     static const int PANEL_W = 300;
 

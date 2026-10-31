@@ -123,14 +123,79 @@ void DisplayWin::set_pixel(int x, int y, unsigned int rgb) {
     data_[y * width_ + x] = rgb;
 }
 
-void DisplayWin::update() {
+void DisplayWin::set_update_skip(const int* xs, const int* ys, const int* ws, const int* hs, int n) {
+    if (n > MAX_SKIP) n = MAX_SKIP;
+    for (int i = 0; i < n; i++) {
+        skip_x_[i] = xs[i]; skip_y_[i] = ys[i];
+        skip_w_[i] = ws[i]; skip_h_[i] = hs[i];
+    }
+    skip_n_ = n;
+}
+
+void DisplayWin::clear_update_skip() {
+    skip_n_ = 0;
+}
+
+// Push one sub-rect of the framebuffer to the window (SHM or fallback).
+void DisplayWin::push_rect(int sx, int sy, int sw, int sh) {
+    if (sw <= 0 || sh <= 0) return;
     if (shm_attached_) {
-        XShmPutImage(d, w, gc, img, 0, 0, 0, 0, width_, height_, False);
+        XShmPutImage(d, w, gc, img, sx, sy, sx, sy, sw, sh, False);
         XSync(d, False);
     } else {
-        XPutImage(d, w, gc, img, 0, 0, 0, 0, width_, height_);
+        XPutImage(d, w, gc, img, sx, sy, sx, sy, sw, sh);
         XFlush(d);
     }
+}
+
+void DisplayWin::update() {
+    // Regions outside the skip rects; inside them the window keeps whatever
+    // Nuklear last blitted, so panels never flicker between frames.
+    if (skip_n_ == 0) {
+        push_rect(0, 0, width_, height_);
+        return;
+    }
+    struct Span { int x0, x1; };
+    // collect x-spans per row-band between panel y-edges
+    int ys[MAX_SKIP * 2 + 2], yn = 0;
+    ys[yn++] = 0;
+    ys[yn++] = height_;
+    for (int i = 0; i < skip_n_; i++) {
+        int a = skip_y_[i], b = skip_y_[i] + skip_h_[i];
+        bool adda = true, addb = true;
+        for (int j = 0; j < yn; j++) { if (ys[j] == a) adda = false; if (ys[j] == b) addb = false; }
+        if (adda && a > 0 && a < height_) ys[yn++] = a;
+        if (addb && b > 0 && b < height_) ys[yn++] = b;
+    }
+    std::sort(ys, ys + yn);
+
+    auto x_in_skip = [&](int x, int y) {
+        for (int i = 0; i < skip_n_; i++)
+            if (y >= skip_y_[i] && y < skip_y_[i] + skip_h_[i] &&
+                x >= skip_x_[i] && x < skip_x_[i] + skip_w_[i])
+                return true;
+        return false;
+    };
+
+    struct Rect { int x, y, w, h; };
+    Rect rects[MAX_SKIP * 8]; int rn = 0;
+    for (int b = 0; b + 1 < yn && rn < MAX_SKIP * 8; b++) {
+        int y = ys[b], y1 = ys[b + 1];
+        if (y1 <= y) continue;
+        int x = 0;
+        while (x < width_ && rn < MAX_SKIP * 8) {
+            bool cov = x_in_skip(x, y);
+            int x0 = x;
+            while (x < width_ && x_in_skip(x, y) == cov) x++;
+            if (!cov) {
+                rects[rn].x = x0; rects[rn].y = y;
+                rects[rn].w = x - x0; rects[rn].h = y1 - y;
+                rn++;
+            }
+        }
+    }
+    for (int i = 0; i < rn; i++)
+        push_rect(rects[i].x, rects[i].y, rects[i].w, rects[i].h);
 }
 
 bool DisplayWin::wait_event(int timeout_ms) {

@@ -124,6 +124,17 @@ static unsigned int to_rgb(const Vec3& color) {
     return ((unsigned)ir << 16) | ((unsigned)ig << 8) | (unsigned)ib;
 }
 
+// --- Skip-rect / block state (set per frame by the editor) ---
+static std::vector<RenderSkip> g_skip;
+static int g_block = 1;
+
+static bool covered(int x, int y) {
+    for (const RenderSkip& r : g_skip)
+        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+            return true;
+    return false;
+}
+
 // --- Render one tile (called from thread pool) ---
 static void render_tile(const Grid& grid, const ViewBasis& b, DisplayWin& display,
                         const Vec3& origin, const Vec3& light, int samples,
@@ -133,9 +144,12 @@ static void render_tile(const Grid& grid, const ViewBasis& b, DisplayWin& displa
     int y0 = ty * tile_size;
     int x1 = std::min(x0 + tile_size, image_width);
     int y1 = std::min(y0 + tile_size, image_height);
-    for (int j = y0; j < y1; j++) {
+    int block = g_block > 1 ? g_block : 1;
+    for (int j = y0; j < y1; j += block) {
         double v = 1.0 - (double)j / (image_height - 1);
-        for (int i = x0; i < x1; i++) {
+        int jh = std::min(block, y1 - j);
+        for (int i = x0; i < x1; i += block) {
+            int iw = std::min(block, x1 - i);
             Vec3 color;
             for (int s = 0; s < samples; s++) {
                 double u_off = (s % 2) * 0.5 + 0.25;
@@ -145,7 +159,17 @@ static void render_tile(const Grid& grid, const ViewBasis& b, DisplayWin& displa
                 Ray r(origin, b.lower_left + u * b.horizontal + vv * b.vertical - origin);
                 color += ray_color(r, grid, light);
             }
-            display.set_pixel(i, j, to_rgb(color / samples));
+            unsigned int c = to_rgb(color / samples);
+            // Chunky block write; covered pixels (UI panels) keep their
+            // previous content so nothing under the panels is erased.
+            if (block == 1 && samples == 1 && g_skip.empty()) {
+                display.set_pixel(i, j, c);
+                continue;
+            }
+            for (int dy = 0; dy < jh; dy++)
+                for (int dx = 0; dx < iw; dx++)
+                    if (!covered(i + dx, j + dy))
+                        display.set_pixel(i + dx, j + dy, c);
         }
     }
 }
@@ -159,7 +183,8 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
     Vec3 light = unit_vector(light_dir);
     Vec3 origin = cam.pos;
 
-    // Phase 1: coarse preview (1 sample, stride ~120 pixels across)
+    // Phase 1: coarse preview (1 sample, stride ~120 pixels across).
+    // Skipped rects are left untouched so the UI never flickers.
     int stride = std::max(1, std::min(image_width, image_height) / 120);
     for (int j = 0; j < image_height; j += stride) {
         double v = 1.0 - (double)j / (image_height - 1);
@@ -169,7 +194,8 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
             unsigned int c = to_rgb(ray_color(r, grid, light));
             for (int dy = 0; dy < stride && j + dy < image_height; dy++)
                 for (int dx = 0; dx < stride && i + dx < image_width; dx++)
-                    display.set_pixel(i + dx, j + dy, c);
+                    if (!covered(i + dx, j + dy))
+                        display.set_pixel(i + dx, j + dy, c);
         }
     }
     display.update();
@@ -211,6 +237,11 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
     pool().wait_idle();
     display.update();
     std::cout << "\r              \r" << std::flush;
+}
+
+void set_render_view(const std::vector<RenderSkip>* skip, int block) {
+    g_skip = skip ? *skip : std::vector<RenderSkip>();
+    g_block = block > 1 ? block : 1;
 }
 
 // --- Picking helpers ---

@@ -15,6 +15,7 @@
 #include "sculpt_mesh.hpp"
 #include "animation.hpp"
 #include "ui/nkui.hpp"
+#include "render_modes.hpp"
 #include <iostream>
 #include <cmath>
 #include <chrono>
@@ -53,41 +54,17 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             break;
         }
     }
-    if (initial_mode == 3 && !sculpt.active())
+    if (get_mode(initial_mode).uses_mouse_for_strokes && !sculpt.active())
         ui.add_sculpt_mesh();
 
     const Vec3 light_dir(settings.light_x, settings.light_y, settings.light_z);
     const char* SAVE_PATH = "saves/default.r3do";
 
     auto render = [&](int samples) {
-        switch (ui.render_mode()) {
-        case 0:
-            render_scene(grid, cam, display, display.width(), display.height(),
-                         samples > 0 ? samples : settings.lq_samples, light_dir);
-            break;
-        case 1: render_billboard(grid, cam, display, light_dir); break;
-        case 2: render_overhead(grid, cam, display); break;
-        case 3: render_scene(grid, cam, display, display.width(), display.height(),
-                         samples > 0 ? samples : settings.lq_samples, light_dir);
-            break;
-        case 4: {
-            // Static rendering: each pixel gets a fixed color, no ray casting
-            int w = display.width();
-            int h = display.height();
-            for (int j = 0; j < h; j++) {
-                for (int i = 0; i < w; i++) {
-                    // Fixed color pattern: gradient based on pixel position
-                    unsigned int c = ((unsigned)(i * 255 / w) << 16) |
-                                    ((unsigned)(j * 255 / h) << 8) |
-                                    (unsigned)(128);
-                    display.set_pixel(i, j, c);
-                }
-            }
-            display.update();
-            break;
-        }
-        default: render_billboard(grid, cam, display, light_dir); break;
-        }
+        // Dispatch from the mode registry (modes/render_modes.hpp); names,
+        // sculpt semantics and the cycle count all come from there too.
+        int s = samples > 0 ? samples : settings.lq_samples;
+        get_mode(ui.render_mode()).render(grid, cam, display, light_dir, s);
     };
 
     auto build_targets = [&](std::vector<std::string>& names,
@@ -123,18 +100,38 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     // Widgets are drawn first so button actions (place shape, change mode,
     // add clip, ...) have already mutated the scene before it is rendered;
     // the completed Nuklear buffer is then blitted over the panels.
-    auto render_and_ui = [&]() {
+    //
+    // The 3D raytrace never writes pixels under the published panel rects
+    // (panels persist across frames instead of vanishing mid-render), and
+    // motion frames use a chunky block preview that keeps the loop smooth.
+    auto render_and_ui = [&](int block = 1) {
         std::vector<std::string> tnames;
         std::vector<Hittable*> tobjs;
         build_targets(tnames, tobjs);
         nkui.draw(ui, animator, cam, tnames, tobjs);
+
+        std::vector<RenderSkip> skip;
+        {
+            const int* pxs; const int* pys; const int* pws; const int* phs;
+            int n = nkui.panel_rects(pxs, pys, pws, phs);
+            for (int i = 0; i < n; i++)
+                skip.push_back({pxs[i], pys[i], pws[i], phs[i]});
+            // Same rects for X pushes here: update() then refreshes only the
+            // scene area, leaving the Nuklear-blitted panel regions
+            // (blitted straight onto the window) untouched between frames.
+            display.set_update_skip(pxs, pys, pws, phs, n);
+        }
+        // NOTE: skip is always applied so panels never get erased by a
+        // raytrace pass, full-quality or not.
+        set_render_view(&skip, block);
         render(0);
         nkui.render();
+        display.update();   // pushes only non-panel rects now
         display.draw_crosshair(display.width() / 2, display.height() / 2, 8, 0x00ff00);
 
         // Gizmo markers: green crosshair on the object under the idle mouse,
         // red crosshair on the object being dragged.
-        if (ui.render_mode() != 3) {
+        if (!ui.is_sculpt_mode()) {
             int mx = display.mouse_x(), my = display.mouse_y();
             if (ui.is_dragging()) {
                 Vec3 c;
@@ -251,6 +248,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     auto last_frame = std::chrono::steady_clock::now();
     bool running = true;
     float last_applied_time = -1.0f;  // seek-preview gate (persists across frames)
+    bool last_frame_motion = false;   // block-preview → idle repaint gate
 
     while (running) {
         bool animating = display.is_mouse_down() ||
@@ -299,7 +297,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             display.clear_mouse();
             if (nkui.hit(mx, my)) {
                 ui_click_pending = true;
-            } else if (btn == 1 && ui.render_mode() != 3 && ui.start_drag(mx, my)) {
+            } else if (btn == 1 && !ui.is_sculpt_mode() && ui.start_drag(mx, my)) {
                 gizmo_dragged = true;
                 render_and_ui();
             } else if (btn == 3) {
@@ -315,20 +313,20 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         if (gizmo_dragged && display.is_mouse_down()) {
             bool shift_held = display.key_held(XK_Shift_L) || display.key_held(XK_Shift_R);
             ui.drag_update(display.mouse_x(), display.mouse_y(), shift_held);
-            render_and_ui();
+            render_and_ui(4);
             display.clear_mouse_delta();
         }
 
         // Begin sculpt stroke
         static bool sculpt_stroke_active = false;
         bool sculpt_mouse_down = (display.mouse_button() == 1 || display.mouse_button() == 3);
-        if (ui.render_mode() == 3 && display.is_mouse_down() && sculpt_mouse_down &&
+        if (ui.is_sculpt_mode() && display.is_mouse_down() && sculpt_mouse_down &&
             !sculpt_stroke_active &&
             !nkui.hit(display.mouse_press_x(), display.mouse_press_y())) {
             sculpt.begin_stroke();
             sculpt_stroke_active = true;
         }
-        if (!(ui.render_mode() == 3 && display.is_mouse_down() && sculpt_mouse_down)) {
+        if (!(ui.is_sculpt_mode() && display.is_mouse_down() && sculpt_mouse_down)) {
             if (sculpt_stroke_active) { sculpt.end_stroke(); sculpt_stroke_active = false; }
         }
 
@@ -336,7 +334,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         if (display.is_mouse_down() && !gizmo_dragged &&
             !nkui.hit(display.mouse_press_x(), display.mouse_press_y())) {
             // Sculpt mode: LMB or RMB strokes
-            if (ui.render_mode() == 3 && sculpt_mouse_down) {
+            if (ui.is_sculpt_mode() && sculpt_mouse_down) {
                 Brush b;
                 b.radius = ui.brush_radius();
                 b.strength = ui.brush_strength();
@@ -344,7 +342,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 b.invert = ui.brush_invert() || display.mouse_button() == 3; // RMB also inverts
                 sculpt.stroke_update(cam, display.width(), display.height(),
                                      display.mouse_x(), display.mouse_y(), b, true);
-                render_and_ui();
+                render_and_ui(4);
                 display.clear_mouse_delta();
             } else {
                 int dx = display.mouse_dx();
@@ -352,7 +350,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 if (dx != 0 || dy != 0) {
                     display.clear_mouse_delta();
                     cam.rotate(-dx * MOUSE_SENS, dy * MOUSE_SENS);
-                    render_and_ui();
+                    render_and_ui(4);
                 }
             }
         }
@@ -373,7 +371,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 if (ui.is_dragging()) ui.end_drag();
                 autosave();
                 render_and_ui();
-            } else if (ui.render_mode() != 3 && display.mouse_button() == 1) {
+            } else if (!ui.is_sculpt_mode() && display.mouse_button() == 1) {
                 int dx = display.mouse_x() - display.mouse_press_x();
                 int dy = display.mouse_y() - display.mouse_press_y();
                 int dist = (int)std::sqrt((double)(dx*dx + dy*dy));
@@ -453,7 +451,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     render_and_ui();
                     break;
                 case XK_b: case XK_B:
-                    ui.set_render_mode((ui.render_mode() + 1) % 5);
+                    ui.set_render_mode((ui.render_mode() + 1) % mode_count());
                     render_and_ui();
                     break;
                 case XK_t: case XK_T:
@@ -489,7 +487,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     break;
                 default:
                     if (ctrl_held && (key == XK_z || key == XK_Z)) {
-                        if (ui.render_mode() == 3) {
+                        if (ui.is_sculpt_mode()) {
                             sculpt.undo();
                             render_and_ui();
                             break;
@@ -499,7 +497,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                             render_and_ui();
                         }
                     } else if (ctrl_held && (key == XK_y || key == XK_Y)) {
-                        if (ui.render_mode() == 3) {
+                        if (ui.is_sculpt_mode()) {
                             sculpt.redo();
                             render_and_ui();
                             break;
@@ -528,6 +526,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         }
 
         // --- Continuous movement (held keys, delta-time) ---
+        bool moved_now = false, rotate_now = false;
         if (running) {
             double fwd_amt = 0, strafe_amt = 0, up_amt = 0;
             if (display.key_held(XK_w)) fwd_amt   += MOVE_SPEED * dt;
@@ -539,13 +538,11 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 if (display.key_held(XK_q)) up_amt -= MOVE_SPEED * dt;
             }
 
-            bool rotate = false;
-            if (display.key_held(XK_Left))  { cam.rotate( ROT_SPEED * dt, 0); rotate = true; }
-            if (display.key_held(XK_Right)) { cam.rotate(-ROT_SPEED * dt, 0); rotate = true; }
-            if (display.key_held(XK_Up))    { cam.rotate(0,  ROT_SPEED * dt); rotate = true; }
-            if (display.key_held(XK_Down))  { cam.rotate(0, -ROT_SPEED * dt); rotate = true; }
+            if (display.key_held(XK_Left))  { cam.rotate( ROT_SPEED * dt, 0); rotate_now = true; }
+            if (display.key_held(XK_Right)) { cam.rotate(-ROT_SPEED * dt, 0); rotate_now = true; }
+            if (display.key_held(XK_Up))    { cam.rotate(0,  ROT_SPEED * dt); rotate_now = true; }
+            if (display.key_held(XK_Down))  { cam.rotate(0, -ROT_SPEED * dt); rotate_now = true; }
 
-            bool moved = false;
             if (fwd_amt != 0 || strafe_amt != 0 || up_amt != 0) {
                 Vec3 step = cam.forward() * fwd_amt + cam.right() * strafe_amt;
                 if (ui.ground_mode()) {
@@ -569,7 +566,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 np = cam.pos;
                 np.y += step.y;
                 if (!blocked_at(grid, np)) cam.pos.y = np.y;
-                moved = true;
+                moved_now = true;
             }
 
             // --- Ground-mode physics (fall off ledges, jump gravity) ---
@@ -586,17 +583,26 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                         vel.y = 0;
                         on_ground = true;
                     }
-                    moved = true;
+                    moved_now = true;
                 } else if (cam.pos.y < gh + EYE_HEIGHT) {
                     cam.pos.y = gh + EYE_HEIGHT;   // terrain rose under us
                 }
             }
 
-            if (moved || rotate)
-                render_and_ui();
+            if (moved_now || rotate_now)
+                render_and_ui(4);
         }
+
+        // Left motion (or finished a block-preview run): repaint once at the
+        // normal preview quality so the last view isn't a chunky blur.
+        bool motion_now = moved_now || rotate_now || gizmo_dragged ||
+                          sculpt_stroke_active || display.is_mouse_down();
+        if (!motion_now && last_frame_motion)
+            render_and_ui(1);
+        last_frame_motion = motion_now;
     }
 
+    display.clear_update_skip();
     autosave();
 }
 

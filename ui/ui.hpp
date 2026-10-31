@@ -1,10 +1,11 @@
 #ifndef UI_H
 #define UI_H
 
-#include "v3.hpp"
+#include "/home/kali/R3DO/src/v3.hpp"
 #include "grid.hpp"
 #include "camera.hpp"
 #include "display.hpp"
+#include "render_modes.hpp"
 #include "sculpt_engine.hpp"
 #include <X11/keysym.h>
 #include <string>
@@ -28,10 +29,15 @@ public:
     void set_ground_mode(bool v);
     int render_mode() const { return render_mode_; }
     void set_render_mode(int m) {
+        int max_mode = mode_count() - 1;
         if (m < 0) m = 0;
-        if (m > 4) m = 4;
+        if (m > max_mode) m = max_mode;
         render_mode_ = m;
         update_labels();
+    }
+    // True when the active mode consumes mouse drags for editing (sculpt-style).
+    bool is_sculpt_mode() const {
+        return get_mode(render_mode_).uses_mouse_for_strokes;
     }
     int palette_idx() const { return palette_idx_; }
     float brush_radius() const { return brush_radius_; }
