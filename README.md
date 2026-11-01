@@ -1,5 +1,5 @@
-# R3DO — Interactive 3D Ray Tracer
-
+# R3DO — RENDRING 3-2-1D OBJECTS 
+ai assisted engine 
 A real-time CPU ray tracer rendered into an X11 window. Build scenes in a 10×10×10
 voxel grid (spheres, boxes, cylinders, cones, meshes, sculptable terrain), animate
 them with keyframes or procedural modifiers, and drag objects directly in the viewport.
@@ -46,6 +46,17 @@ them with keyframes or procedural modifiers, and drag objects directly in the vi
 ![Overhead mode](docs/img/editor-overhead.png)
 ![Billboard mode](docs/img/editor-billboard.png)
 
+- **Heightmap terrain** — drop grayscale PNGs into `maps/`, then **Import HMap**
+  in the sidebar (the modal lists every PNG; pixel luminance becomes height on a
+  0-3 world-unit ramp sized to the grid). The terrain renders in **Overhead**
+  (height-colored map) and **Raytrace** mode — Billboard does not draw terrain.
+  Press `B` to cycle to Overhead after importing. **Blank HMap** starts a flat
+  field for painting: in **Overhead** mode, left-drag raises ground (Shift
+  lowers) using the sculpt radius/strength sliders. **Export HMap** writes the
+  painted field back as a PNG (name defaults to `blank`, saved in `maps/`) so
+  it round-trips through saves — imported maps already persist via their
+  source path.
+
 ## Controls
 
 | Key | Action |
@@ -82,7 +93,9 @@ sculpt mode) and **Settings**. **Load Scene** lists all `.r3do` files found in
 
 All scene changes are automatically saved to `saves/default.r3do`. To snapshot a
 scene, click **Save** name the file; loads are picked from the start screen.
-Scene files store objects, transforms, and animation clips.
+Scene files store objects, transforms, and animation clips. The `terrain` entry
+stores the source path — `.obj` meshes reload as meshes, `.png` heightmaps
+rebuild the heightfield from `maps/` at load time.
 
 ## Animation Workflow
 
@@ -148,6 +161,9 @@ Sources live in six folders (`src/`, `anim/`, `shapes/`, `modes/`, `sculpt/`,
 | `src/hittable.hpp` | Hittable base incl. animated transforms |
 | `shapes/sphere.hpp` `box.hpp` `cylinder.hpp` `cone.hpp` | Primitives |
 | `shapes/mesh.cpp` / `mesh.hpp` | OBJ meshes with SAH BVH; `shapes/obj_loader.*` OBJ parsing |
+| `shapes/heightfield.cpp` / `.hpp` | PNG-heightmap terrain: ray-marched Hittable, paint brush, PNG import/export |
+| `vendor/stb/` | Vendored single-header PNG codecs (`stb_image`, `stb_image_write`) |
+| `maps/` | Heightmap PNGs for the terrain importer (created on demand) |
 | `sculpt/sculpt_mesh.cpp` / `sculpt_engine.cpp` | Sculptable meshes and brush engine (`sculpt/brush.hpp`) |
 | `src/saver.hpp` / `.cpp` | Scene save/load `.r3do` |
 | `src/display.hpp` / `.cpp` | X11 window, input, MIT-SHM framebuffer |

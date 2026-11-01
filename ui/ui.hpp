@@ -7,6 +7,8 @@
 #include "display.hpp"
 #include "render_modes.hpp"
 #include "sculpt_engine.hpp"
+#include "hittable.hpp"
+#include "heightfield.hpp"
 #include <X11/keysym.h>
 #include <string>
 #include <vector>
@@ -92,6 +94,25 @@ public:
     void do_remesh();
     void load_terrain();
 
+    // heightfield terrain (PNG import + paint brush)
+    void scan_hmaps();
+    const std::vector<std::string>& hmap_files() const { return hmap_files_; }
+    void load_heightfield(int idx);
+    bool export_heightfield(const char* name);
+    void make_blank_heightfield();
+    char* hf_name_buf() { return hf_name_; }
+    int* hf_name_len() { return &hf_name_len_; }
+    bool heightfield_active() const;
+
+    // heightmap import dialog state (driven by NkUI modal)
+    bool hmap_dialog_active_ = false;
+    bool is_hmap_dialog_active() const { return hmap_dialog_active_; }
+    void open_hmap_dialog() {
+        scan_hmaps();
+        hmap_dialog_active_ = true;
+    }
+    void cancel_hmap_dialog() { hmap_dialog_active_ = false; }
+
     // save dialog state (driven by NkUI modal)
     bool save_dialog_active_ = false;
     bool is_save_dialog_active() const { return save_dialog_active_; }
@@ -140,6 +161,10 @@ private:
 
     std::vector<std::string> mesh_files_;
     int mesh_idx_ = 0;
+
+    std::vector<std::string> hmap_files_;
+    char hf_name_[64] = "blank";
+    int hf_name_len_ = 5;
 
     int selected_obj_ = -1;
 

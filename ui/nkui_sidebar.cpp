@@ -209,6 +209,18 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
         }
         nk_layout_row_dynamic(ctx_, 24, 1);
         if (nk_button_label(ctx_, "Set Terrain")) ui.load_terrain();
+        nk_layout_row_dynamic(ctx_, 24, 2);
+        if (nk_button_label(ctx_, "Import HMap")) ui.open_hmap_dialog();
+        if (nk_button_label(ctx_, "Blank HMap"))
+            ui.make_blank_heightfield();
+        // paint/export row only when a heightfield terrain is active
+        if (ui.heightfield_active()) {
+            nk_layout_row_dynamic(ctx_, 24, 2);
+            nk_edit_string(ctx_, NK_EDIT_SIMPLE, ui.hf_name_buf(),
+                           ui.hf_name_len(), 63, nk_filter_ascii);
+            if (nk_button_label(ctx_, "Export HMap"))
+                ui.export_heightfield(ui.hf_name_buf());
+        }
     }
 
     nk_spacing(ctx_, 1);

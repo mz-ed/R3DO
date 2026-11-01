@@ -19,7 +19,7 @@ public:
     Vec3 origin;
     std::vector<std::unique_ptr<Hittable>> cells;
     std::vector<std::unique_ptr<Hittable>> free_objects_;
-    std::unique_ptr<Mesh> terrain_;
+    std::unique_ptr<Hittable> terrain_;
     std::string terrain_path_;
     int visible_count_ = 0;   // visible cells + visible free objects
     int cell_object_count_ = 0;
@@ -149,8 +149,8 @@ public:
 
     const std::vector<std::unique_ptr<Hittable>>& free_objects() const { return free_objects_; }
 
-    void set_terrain(Mesh* m, const std::string& path = "") { terrain_.reset(m); terrain_path_ = path; }
-    Mesh* terrain() const { return terrain_.get(); }
+    void set_terrain(Hittable* m, const std::string& path = "") { terrain_.reset(m); terrain_path_ = path; }
+    Hittable* terrain() const { return terrain_.get(); }
     const std::string& terrain_path() const { return terrain_path_; }
     bool has_terrain() const { return terrain_ && terrain_->is_visible(); }
 
@@ -201,7 +201,7 @@ public:
             }
         }
 
-        if (visible_count_ - vis_free <= 0) return hit_any;
+        if (visible_count_ - vis_free <= 0 && !has_terrain()) return hit_any;
         Vec3 gmin, gmax;
         grid_bounds(gmin, gmax);
 

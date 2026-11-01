@@ -4,6 +4,7 @@
 #include "cylinder.hpp"
 #include "cone.hpp"
 #include "obj_loader.hpp"
+#include "heightfield.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -145,9 +146,24 @@ static bool deserialize_stream(FILE* f, Grid& grid, Camera* cam,
             const char* p = line + 7;
             std::string path;
             if (parse_quoted(&p, path)) {
-                Mesh* m = load_mesh_centered(path.c_str(), Vec3(0.3, 0.5, 0.25),
-                                             Vec3(0, 0, 0), 1.0);
-                if (m) grid.set_terrain(m, path);
+                size_t dot = path.rfind('.');
+                std::string ext = (dot == std::string::npos) ? "" : path.substr(dot);
+                if (ext == ".png") {
+                    // heightmap-backed terrain; footprint follows the grid
+                    Vec3 gmin, gmax;
+                    grid.grid_bounds(gmin, gmax);
+                    double side = std::max(gmax.x - gmin.x, gmax.z - gmin.z) + 1.6;
+                    auto* hf = HeightField::from_png(path,
+                                                     gmin.x - (side - (gmax.x - gmin.x)) / 2,
+                                                     gmin.z - (side - (gmax.z - gmin.z)) / 2,
+                                                     side, 0.0, 3.0,
+                                                     Vec3(0.3, 0.5, 0.25)).release();
+                    if (hf) grid.set_terrain(hf, path);
+                } else {
+                    Mesh* m = load_mesh_centered(path.c_str(), Vec3(0.3, 0.5, 0.25),
+                                                 Vec3(0, 0, 0), 1.0);
+                    if (m) grid.set_terrain(m, path);
+                }
             }
             continue;
         }

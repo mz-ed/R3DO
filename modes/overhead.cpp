@@ -48,6 +48,33 @@ void render_overhead(Grid& grid, Camera& cam, DisplayWin& display) {
         display.fill_rect(ox, p.y, (int)total_w, 1, 0x222244);
     }
 
+    // Heightfield terrain -> height/slope colored map under the grid.
+    if (auto* hf = dynamic_cast<HeightField*>(grid.terrain())) {
+        double hf_step = hf->side() / hf->hf_res();
+        for (int k = 0; k < hf->hf_res(); k++) {
+            for (int i = 0; i < hf->hf_res(); i++) {
+                double wx = hf->origin_x() + (i + 0.5) * hf_step;
+                double wz = hf->origin_z() + (k + 0.5) * hf_step;
+                if (wx < gmin.x - hf_step || wx > gmax.x + hf_step ||
+                    wz < gmin.z - hf_step || wz > gmax.z + hf_step)
+                    continue;
+                double hy = 0.0;
+                double hx = 0.0, hz = 0.0;
+                hf->column_sample(i, k, hy, hx, hz);
+                // slight shade by relative height, water-flat for low
+                double tn = hy / hf->max_height();
+                unsigned int col;
+                if (tn < 0.10) col = 0x2b4a72;
+                else if (tn < 0.45) col = 0x3a7a38;
+                else if (tn < 0.80) col = 0x8a8f78;
+                else col = 0xd8dde8;
+                ScreenPt p = to_screen(wx, wz);
+                int pw = std::max(2, (int)std::ceil(hf_step * cell_px));
+                display.fill_rect(p.x - pw / 2, p.y - pw / 2, pw, pw, col);
+            }
+        }
+    }
+
     auto shade = [&](const Vec3& color) -> unsigned int {
         int cr = int(255.999 * std::sqrt(color.x));
         int cg = int(255.999 * std::sqrt(color.y));

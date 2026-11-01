@@ -5,9 +5,11 @@
 #include "cylinder.hpp"
 #include "cone.hpp"
 #include "obj_loader.hpp"
+#include "heightfield.hpp"
 #include "sculpt_mesh.hpp"
 #include "render.hpp"
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -22,6 +24,7 @@ double UI::now_s() const {
 UI::UI(Grid& g, Camera& c, DisplayWin& dsp, SculptEngine* sculpt)
     : grid(g), cam(c), display(dsp), sculpt_(sculpt) {
     scan_meshes();
+    scan_hmaps();
     update_labels();
 }
 
@@ -150,6 +153,87 @@ void UI::load_terrain() {
     } else {
         show_msg("Mesh load failed");
     }
+}
+
+// ---- heightfield terrain (PNG heightmaps in maps/) ----
+
+void UI::scan_hmaps() {
+    hmap_files_.clear();
+    std::error_code ec;
+    if (!fs::exists("maps")) {
+        fs::create_directory("maps", ec);
+        return;
+    }
+    for (const auto& entry : fs::directory_iterator("maps", ec)) {
+        if (!entry.is_regular_file()) continue;
+        auto p = entry.path();
+        auto ext = p.extension().string();
+        for (char& c : ext) c = (char)tolower((unsigned char)c);
+        if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" ||
+            ext == ".bmp" || ext == ".tga")
+            hmap_files_.push_back(p.string());
+    }
+    std::sort(hmap_files_.begin(), hmap_files_.end());
+}
+
+void UI::load_heightfield(int idx) {
+    if (idx < 0 || idx >= (int)hmap_files_.size()) {
+        show_msg("No PNG in maps/");
+        return;
+    }
+    const std::string& path = hmap_files_[(size_t)idx];
+    Vec3 gmin, gmax;
+    grid.grid_bounds(gmin, gmax);
+    double span_x = gmax.x - gmin.x, span_z = gmax.z - gmin.z;
+    double side = std::max(span_x, span_z) + 1.6;
+    auto hf = HeightField::from_png(path,
+                                    gmin.x - (side - span_x) / 2,
+                                    gmin.z - (side - span_z) / 2,
+                                    side, 0.0, 3.0,
+                                    Vec3(0.3, 0.5, 0.25));
+    if (!hf) {
+        show_msg("PNG decode failed");
+        return;
+    }
+    grid.set_terrain(hf.release(), path);
+    show_msg("Heightmap imported");
+}
+
+bool UI::export_heightfield(const char* name) {
+    auto* hf = dynamic_cast<HeightField*>(grid.terrain());
+    if (!hf) {
+        show_msg("No heightmap terrain");
+        return false;
+    }
+    std::string safe(name);
+    for (char& ch : safe)
+        if (ch == '/' || ch == '\\' || ch == ':' || ch < 32) ch = '_';
+    std::string path = std::string("maps/") + safe + ".png";
+    if (!hf->export_png(path)) {
+        show_msg("PNG write failed");
+        return false;
+    }
+    if (hf->mesh_path().empty()) hf->set_path(path);
+    show_msg("Exported");
+    scan_hmaps();
+    return true;
+}
+
+void UI::make_blank_heightfield() {
+    Vec3 gmin, gmax;
+    grid.grid_bounds(gmin, gmax);
+    double span_x = gmax.x - gmin.x, span_z = gmax.z - gmin.z;
+    double side = std::max(span_x, span_z) + 1.6;
+    auto hf = HeightField::flat(gmin.x - (side - span_x) / 2,
+                                gmin.z - (side - span_z) / 2,
+                                side, 0.0,
+                                Vec3(0.3, 0.5, 0.25));
+    grid.set_terrain(hf.release(), "");
+    show_msg("Blank heightmap ready");
+}
+
+bool UI::heightfield_active() const {
+    return dynamic_cast<HeightField*>(grid.terrain()) != nullptr;
 }
 
 const std::vector<std::string>* UI::object_list() {

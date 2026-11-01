@@ -33,7 +33,11 @@ public:
 
     bool visible() const { return visible_; }
     void set_visible(bool v) { visible_ = v; }
-    bool wants_keys() const { return any_active_ || save_modal_open_; }
+    // One-shot hotkeys are suppressed only for real input targets (save
+    // modal, focused text field, open popup). nk_item_is_any_active() is
+    // unusable here: NK_WIDGET_STATE_MODIFIED survives nk_widget_state_reset,
+    // so one button touch latches it forever and eats every hotkey.
+    bool wants_keys() const;
     bool hit(int mx, int my) const;
 
     void draw(UI& ui, Animator& anim, Camera& cam,
@@ -57,8 +61,8 @@ private:
     Window win_ = 0;
     int screen_ = 0;
     bool visible_ = false;          // animation panel visibility
-    bool any_active_ = false;
     bool save_modal_open_ = false;
+    bool hmap_modal_open_ = false;
     bool hooked_ = false;           // event hook registered
 
     // panel rects, filled during draw
@@ -92,6 +96,7 @@ private:
                          const std::vector<std::string>& target_names,
                          const std::vector<Hittable*>& target_objs, int wh);
     void draw_save_modal(UI& ui, int ww, int wh);
+    void draw_hmap_modal(UI& ui, int ww, int wh);
 };
 
 #endif

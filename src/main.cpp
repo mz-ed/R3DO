@@ -317,6 +317,47 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             display.clear_mouse_delta();
         }
 
+        // --- Heightfield paint brush (Overhead mode) ---
+        // Overhead looks straight down, so the mouse maps directly to the
+        // map rectangle; invert the to_screen() transform used there.
+        // Left-drag raises with the sidebar brush sliders; Shift lowers.
+        if (display.is_mouse_down() && ui.render_mode() == 2 &&
+            !gizmo_dragged && !nkui.hit(display.mouse_press_x(), display.mouse_press_y())) {
+            auto* hf = dynamic_cast<HeightField*>(grid.terrain());
+            if (hf && !ui.is_save_dialog_active() && !ui.is_hmap_dialog_active()) {
+                int w = display.width(), h = display.height();
+                int pad = 60;
+                int map_w = w - pad * 2 - UI::SIDEBAR_W;
+                int map_h = h - pad * 2;
+                double cs = grid.cell_size;
+                double cell_px_x = (double)map_w / (grid.nx * cs);
+                double cell_px_y = (double)map_h / (grid.nz * cs);
+                double cell_px = std::min(cell_px_x, cell_px_y);
+                if (cell_px < 1) cell_px = 1;
+                double total_w = grid.nx * cs * cell_px;
+                double total_h = grid.nz * cs * cell_px;
+                int ox = pad + (int)((map_w - total_w) / 2);
+                int oy = pad + (int)((map_h - total_h) / 2);
+                int mx = display.mouse_x(), my = display.mouse_y();
+
+                if (mx >= ox && mx <= ox + total_w && my >= oy && my <= oy + total_h) {
+                    Vec3 gmin, gmax;
+                    grid.grid_bounds(gmin, gmax);
+                    double fx = (double)(mx - ox) / total_w;
+                    double fz = 1.0 - (double)(my - oy) / total_h;  // +z axis up
+                    double wx = gmin.x + fx * (gmax.x - gmin.x);
+                    double wz = gmin.z + fz * (gmax.z - gmin.z);
+                    bool shift_held = display.key_held(XK_Shift_L) ||
+                                      display.key_held(XK_Shift_R);
+                    double sgn = shift_held ? -1.0 : 1.0;
+                    hf->paint(wx, wz, ui.brush_radius(),
+                              sgn * (double)ui.brush_strength() * 0.6, 0);
+                    render_and_ui(2);
+                }
+                display.clear_mouse_delta();
+            }
+        }
+
         // Begin sculpt stroke
         static bool sculpt_stroke_active = false;
         bool sculpt_mouse_down = (display.mouse_button() == 1 || display.mouse_button() == 3);

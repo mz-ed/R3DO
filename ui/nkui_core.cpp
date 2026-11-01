@@ -131,11 +131,23 @@ static void expand(int& x, int& y, int& w, int& h, int ww, int wh, int m) {
     if (y + h > wh) h = wh - y;
 }
 
+bool NkUI::wants_keys() const {
+    if (save_modal_open_ || hmap_modal_open_) return true;
+    if (!ctx_) return false;
+    for (auto* iter = ctx_->begin; iter; iter = iter->next) {
+        if (iter->flags & NK_WINDOW_HIDDEN) continue;
+        if (iter->edit.active) return true;
+        if (iter->popup.active && iter->popup.win &&
+            !(iter->popup.win->flags & NK_WINDOW_HIDDEN))
+            return true;
+    }
+    return false;
+}
+
 void NkUI::draw(UI& ui, Animator& anim, Camera& cam,
                 const std::vector<std::string>& target_names,
                 const std::vector<Hittable*>& target_objs) {
     if (!ctx_) return;
-    any_active_ = nk_item_is_any_active(ctx_) != 0;
 
     int ww = 800, wh = 600;
     XWindowAttributes attr;
@@ -147,6 +159,7 @@ void NkUI::draw(UI& ui, Animator& anim, Camera& cam,
     draw_sidebar(ui, ww, wh);
     draw_anim_panel(anim, cam, target_names, target_objs, wh);
     draw_save_modal(ui, ww, wh);
+    draw_hmap_modal(ui, ww, wh);
 
     // publish rects (expanded a bit for border/shadow spill)
     panel_n_ = 0;
@@ -164,6 +177,49 @@ void NkUI::draw(UI& ui, Animator& anim, Camera& cam,
             panel_n_++;
         }
     }
+}
+
+void NkUI::draw_hmap_modal(UI& ui, int ww, int wh) {
+    hmap_modal_open_ = false;
+    if (!ui.is_hmap_dialog_active()) return;
+    hmap_modal_open_ = true;
+
+    int mw = 300, mh = 240;
+    bool open = nk_begin(ctx_, "Import Heightmap",
+                         nk_rect((float)((ww - mw) / 2), (float)((wh - mh) / 3),
+                                 (float)mw, (float)mh),
+                         NK_WINDOW_BORDER | NK_WINDOW_TITLE);
+    if (!open) { nk_end(ctx_); return; }
+    ctx_->current->layout->flags &= ~(nk_flags)NK_WINDOW_ROM;
+    ctx_->current->flags &= ~(nk_flags)NK_WINDOW_ROM;
+
+    const auto& files = ui.hmap_files();
+    if (files.empty()) {
+        nk_layout_row_dynamic(ctx_, 22, 1);
+        nk_label(ctx_, "No PNGs in maps/ folder", NK_TEXT_LEFT);
+        nk_label(ctx_, "Drop grayscale heightmaps in maps/", NK_TEXT_LEFT);
+        nk_layout_row_dynamic(ctx_, 24, 1);
+        if (nk_button_label(ctx_, "Refresh"))
+            ui.open_hmap_dialog();
+    } else {
+        for (size_t i = 0; i < files.size() && i < 8; i++) {
+            std::string name = files[i];
+            size_t slash = name.rfind('/');
+            std::string shortname =
+                (slash != std::string::npos) ? name.substr(slash + 1) : name;
+            nk_layout_row_dynamic(ctx_, 22, 1);
+            if (nk_button_label(ctx_, shortname.c_str())) {
+                ui.load_heightfield((int)i);
+                ui.cancel_hmap_dialog();
+                break;
+            }
+        }
+    }
+    nk_layout_row_dynamic(ctx_, 24, 1);
+    if (nk_button_label(ctx_, "Cancel"))
+        ui.cancel_hmap_dialog();
+
+    nk_end(ctx_);
 }
 
 void NkUI::draw_save_modal(UI& ui, int ww, int wh) {

@@ -9,7 +9,7 @@ INC       = -I. -Isrc -Ianim -Ishapes -Imodes -Iui -Isculpt
 
 SRCS = src/main.cpp src/display.cpp src/render.cpp src/saver.cpp src/settings.cpp \
        anim/animation.cpp \
-       shapes/mesh.cpp shapes/obj_loader.cpp \
+       shapes/mesh.cpp shapes/obj_loader.cpp shapes/heightfield.cpp \
        sculpt/sculpt_mesh.cpp sculpt/sculpt_engine.cpp sculpt/sculpt_io.cpp sculpt/sculpt_ui.cpp \
        ui/ui.cpp ui/nkui_core.cpp ui/nkui_sidebar.cpp ui/nkui_anim.cpp ui/startscreen.cpp \
        modes/modes.cpp modes/billboard.cpp modes/overhead.cpp modes/static.cpp
@@ -27,6 +27,10 @@ $(BIN): $(OBJS)
 
 # Nuklear's big headers stay behind -w so project warnings stay readable.
 ui/nkui_core.o: ui/nkui_core.cpp vendor/nuklear/nuklear.h vendor/nuklear/nuklear_xlib.h
+	$(CXX) -O2 -w -std=c++17 $(INC) $(DEPFLAGS) -c -o $@ $<
+
+# heightfield.cpp embeds the stb implementations - same treatment.
+shapes/heightfield.o: shapes/heightfield.cpp shapes/heightfield.hpp vendor/stb/stb_image.h vendor/stb/stb_image_write.h
 	$(CXX) -O2 -w -std=c++17 $(INC) $(DEPFLAGS) -c -o $@ $<
 
 -include $(DEPS)
