@@ -57,6 +57,15 @@ them with keyframes or procedural modifiers, and drag objects directly in the vi
   it round-trips through saves — imported maps already persist via their
   source path.
 
+## Terrain and world generation
+
+Combine imported heightmaps with the sculpt system to build whole worlds:
+height-colored ground (water / grass / rock / snow bands), camera that rides
+the ground, and any sculpt mesh or primitives placed on top — all rendered by
+the raytrace engine with the shared directional lighting.
+
+![Terrain and world generation](docs/img/terrain-world.png)
+
 ## Controls
 
 | Key | Action |

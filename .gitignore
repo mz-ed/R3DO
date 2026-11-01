@@ -3,3 +3,6 @@ renderer
 *.o
 settings.cfg
 saves/
+R3DO
+R3DO.asan
+q1
