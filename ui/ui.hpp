@@ -1,14 +1,16 @@
 #ifndef UI_H
 #define UI_H
 
-#include "/home/kali/R3DO/src/v3.hpp"
+#include "v3.hpp"
 #include "grid.hpp"
 #include "camera.hpp"
 #include "display.hpp"
 #include "render_modes.hpp"
 #include "sculpt_engine.hpp"
 #include "hittable.hpp"
+#include "skeleton.hpp"
 #include "heightfield.hpp"
+#include "animation.hpp"
 #include <X11/keysym.h>
 #include <string>
 #include <vector>
@@ -91,6 +93,28 @@ public:
     ShapeType last_shape() const { return last_shape_; }
     void clear_scene();
     void add_sculpt_mesh();
+    void add_skeleton_to_selected();
+    Hittable* selected_free_object();
+    const Skeleton* selected_skeleton() const;
+    void add_bone_to_skeleton();
+    void delete_bone_from_skeleton();
+    void relink_selected_bones();
+    void rename_selected_bone(const char* name);
+
+    int selected_bone() const { return selected_bone_; }
+    void set_selected_bone(int b) { selected_bone_ = b; }
+    void select_bone_with_name(int b) {
+        selected_bone_ = b;
+        const Skeleton* sk = selected_skeleton();
+        bone_name_[0] = 0; bone_name_len_ = 0;
+        if (sk && b >= 0 && b < (int)sk->bones.size()) {
+            const std::string& n = sk->bones[(size_t)b].name;
+            bone_name_len_ = (int)n.copy(bone_name_, sizeof(bone_name_) - 1);
+            bone_name_[bone_name_len_] = 0;
+        }
+    }
+    char* bone_name_buf() { return bone_name_; }
+    int* bone_name_len() { return &bone_name_len_; }
     void do_remesh();
     void load_terrain();
 
@@ -103,6 +127,10 @@ public:
     char* hf_name_buf() { return hf_name_; }
     int* hf_name_len() { return &hf_name_len_; }
     bool heightfield_active() const;
+
+    // Scene save/load carries animation clips when an animator is attached.
+    void set_animator(Animator* a) { animator_ = a; }
+    Animator* animator() { return animator_; }
 
     // heightmap import dialog state (driven by NkUI modal)
     bool hmap_dialog_active_ = false;
@@ -138,6 +166,7 @@ private:
     Camera& cam;
     DisplayWin& display;
     SculptEngine* sculpt_ = nullptr;
+    Animator* animator_ = nullptr;
 
     int render_mode_ = 1;
     bool ground_mode_ = false;
@@ -167,6 +196,9 @@ private:
     int hf_name_len_ = 5;
 
     int selected_obj_ = -1;
+    int selected_bone_ = -1;
+    char bone_name_[64] = "";
+    int bone_name_len_ = 0;
 
     // --- gizmo drag state ---
     bool dragging_ = false;

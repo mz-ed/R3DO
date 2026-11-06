@@ -14,7 +14,8 @@
 
 void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
                            const std::vector<std::string>& target_names,
-                           const std::vector<Hittable*>& target_objs, int wh) {
+                           const std::vector<Hittable*>& target_objs,
+                           const std::vector<std::pair<int, int>>& target_bones, int wh) {
     if (!visible_) return;
     bool open = nk_begin(ctx_, "Animation", nk_rect(0, 0, (float)PANEL_W, (float)wh),
                          NK_WINDOW_BORDER | NK_WINDOW_TITLE);
@@ -69,7 +70,8 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
     auto tgt_obj = [&]() -> Hittable* {
         if (anim.clips.empty()) return nullptr;
         const auto& t = sel_cli().target;
-        if (t.type != AnimTarget::FREE_OBJECT) return nullptr;
+        if (t.type != AnimTarget::FREE_OBJECT && t.type != AnimTarget::FREE_BONE)
+            return nullptr;
         if (t.free_idx < 0 || t.free_idx >= (int)target_objs.size()) return nullptr;
         return target_objs[(size_t)t.free_idx];
     };
@@ -105,10 +107,11 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
 
         // ---- target combo (free objects + camera) ----
         nk_layout_row_dynamic(ctx_, 20, 1);
-        const int free_count = (int)target_names.size() - 1; // last entry = camera
+        const int cam_idx = (int)target_names.size() - 1; // last entry = camera
+        const int free_count = cam_idx - (int)target_bones.size();
         AnimTarget& tg = sel_cli().target;
         const char* tcur;
-        if (tg.type == AnimTarget::CAMERA) tcur = "camera";
+        if (tg.type == AnimTarget::CAMERA) { tcur = "camera"; }
         else if (tg.type == AnimTarget::CELL) {
             static char cellbuf[64];
             snprintf(cellbuf, sizeof(cellbuf), "cell %d,%d,%d", tg.i, tg.j, tg.k);
@@ -116,7 +119,13 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
         } else if (tg.type == AnimTarget::FREE_OBJECT &&
                    tg.free_idx >= 0 && tg.free_idx < free_count)
             tcur = target_names[(size_t)tg.free_idx].c_str();
-        else
+        else if (tg.type == AnimTarget::FREE_BONE) {
+            int found = -1;
+            for (int i = free_count; i < cam_idx; i++)
+                if (target_bones[(size_t)i].first == tg.free_idx &&
+                    target_bones[(size_t)i].second == tg.bone) { found = i; break; }
+            tcur = found >= 0 ? target_names[(size_t)found].c_str() : "^ pick target";
+        } else
             tcur = "^ pick target";
 
         if (nk_combo_begin_label(ctx_, tcur, nk_vec2((float)PANEL_W - 30, 170))) {
@@ -124,13 +133,20 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
             for (int i = 0; i < (int)target_names.size(); i++)
                 if (nk_combo_item_label(ctx_, target_names[(size_t)i].c_str(), NK_TEXT_LEFT)) {
                     auto& t = sel_cli().target;
-                    if (i >= free_count) {
+                    if (i >= cam_idx) {
                         t.type = AnimTarget::CAMERA;
                         t.free_idx = -1;
+                        t.bone = -1;
                         t.i = t.j = t.k = -1;
                         sel_cli().base_snapped = false; // snap pose on next apply
+                    } else if (i >= free_count) {
+                        t.type = AnimTarget::FREE_BONE;
+                        t.free_idx = target_bones[(size_t)i].first;
+                        t.bone = target_bones[(size_t)i].second;
+                        t.i = t.j = t.k = -1;
                     } else {
                         t.type = AnimTarget::FREE_OBJECT;
+                        t.bone = -1;
                         t.free_idx = i;
                         snap_base(sel_clip_);
                     }

@@ -60,6 +60,18 @@ public:
     bool export_obj(const std::string& filename) const;
     void translate(const Vec3& delta) override;
 
+    // Native persistence: exact vertex/face round-trip for saved scenes.
+    bool export_blob(const std::string& path) const;
+    static SculptMesh* from_blob(const std::string& path, const Vec3& color);
+
+    // ---- skeleton support ----
+    void bind_skeleton(Skeleton* sk) override;
+    void set_bone_pose(int bone, const Vec3& rot, const Vec3& off) override;
+    void apply_bones() override;
+    void reset_bones() override;
+    double bone_span() const override;
+    void remap_bone_binds(int removed, int replacement) override;
+
     const std::vector<std::vector<int>>& adj_faces() const { return adj_faces_; }
 
 private:
@@ -69,6 +81,11 @@ private:
     std::vector<BN> bnodes_;
     std::vector<FN2> fn2_;
     std::vector<int> tri_list_;
+    // skeleton bind snapshot: bind positions + per-vertex bone index
+    std::vector<SculptVertex> bind_verts_;
+    std::vector<int> bind_bone_;
+    bool bvh_dirty_ = false;
+    double last_bvh_rebuild_ = 0.0;
     Vec3 color_;
     std::string path_;
 };

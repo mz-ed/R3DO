@@ -12,7 +12,7 @@ SRCS = src/main.cpp src/display.cpp src/render.cpp src/saver.cpp src/settings.cp
        shapes/mesh.cpp shapes/obj_loader.cpp shapes/heightfield.cpp \
        sculpt/sculpt_mesh.cpp sculpt/sculpt_engine.cpp sculpt/sculpt_io.cpp sculpt/sculpt_ui.cpp \
        ui/ui.cpp ui/nkui_core.cpp ui/nkui_sidebar.cpp ui/nkui_anim.cpp ui/startscreen.cpp \
-       modes/modes.cpp modes/billboard.cpp modes/overhead.cpp modes/static.cpp
+       modes/modes.cpp modes/billboard.cpp modes/overhead.cpp modes/bones.cpp modes/static.cpp
 OBJS = $(SRCS:.cpp=.o)
 DEPS = $(OBJS:.o=.d)
 BIN  = R3DO

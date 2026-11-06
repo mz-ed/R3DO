@@ -3,8 +3,10 @@
 
 #include "v3.hpp"
 #include "ray.hpp"
+#include "skeleton.hpp"
 #include <string>
 #include <cmath>
+#include <memory>
 
 struct HitRecord {
     Vec3 p;
@@ -62,6 +64,33 @@ public:
     virtual Vec3 get_center() const { return anim_offset_; }
     virtual void translate(const Vec3& d) { (void)d; }
     virtual std::string mesh_path() const { return ""; }
+
+    // ---- skeleton support ----
+    // Every object may carry a bone chain; geometric classes (Mesh,
+    // SculptMesh) override bind/apply/reset to bake vertex poses.
+    void attach_skeleton(Skeleton* sk) { skeleton_.reset(sk); }
+    const Skeleton* skeleton() const { return skeleton_.get(); }
+    Skeleton* skeleton_mut() { return skeleton_.get(); }
+
+    // Skeleton without binds: bones exist but nothing follows them yet.
+    virtual void bind_skeleton(Skeleton* sk) { skeleton_.reset(sk); }
+    virtual void set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
+        if (!skeleton_ || bone < 0 || bone >= (int)skeleton_->bones.size()) return;
+        Skeleton::Bone& b = skeleton_->bones[(size_t)bone];
+        b.off = off;
+        anim_euler_matrix(rot, b.m, bone_tmp_mtx_);
+    }
+    virtual void apply_bones() {}
+    virtual void reset_bones() {
+        if (!skeleton_) return;
+        for (auto& b : skeleton_->bones) b.clear_pose();
+    }
+    // vertical extent of the object's geometry, for auto bone placement
+    virtual double bone_span() const { return 1.0; }
+    // after removing a bone: remap stored per-vertex bone ids
+    virtual void remap_bone_binds(int removed, int replacement) {
+        (void)removed; (void)replacement;
+    }
     bool is_visible() const { return visible_; }
     void set_visible(bool v) { visible_ = v; }
 
@@ -118,6 +147,10 @@ public:
                              rec.color.y * anim_tint_.y,
                              rec.color.z * anim_tint_.z);
     }
+
+protected:
+    std::unique_ptr<Skeleton> skeleton_;
+    double bone_tmp_mtx_[3][3];
 
 private:
     bool rot_active_ = false;

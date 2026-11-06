@@ -1,6 +1,7 @@
 #include "render_modes.hpp"
 #include "billboard.hpp"
 #include "overhead.hpp"
+#include "bones.hpp"
 #include "render.hpp"
 
 // --- adapters to the uniform signature ---
@@ -23,6 +24,11 @@ static void billboard_mode(Grid& grid, Camera& cam, DisplayWin& display,
     render_billboard(grid, cam, display, light_dir);
 }
 
+static void bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
+                       const Vec3& light_dir, int samples) {
+    render_bones_mode(grid, cam, display, light_dir, samples);
+}
+
 static void overhead_mode(Grid& grid, Camera& cam, DisplayWin& display,
                           const Vec3& light_dir, int) {
     (void)light_dir; // top-down marker view; no lighting
@@ -36,4 +42,5 @@ const RenderMode MODES[] = {
     { "Overhead",  overhead_mode,   false },
     { "Sculpt",    sculpt_mode,     true  },
     { "Static",    static_mode,     false },
+    { "Bones",     bones_mode,      false },
 };

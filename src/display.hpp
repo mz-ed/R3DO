@@ -82,6 +82,7 @@ public:
     void draw_text(int x, int y, const char* text, unsigned long color);
     void fill_rect(int x, int y, int w, int h, unsigned long color);
     void draw_crosshair(int cx, int cy, int size, unsigned long color);
+    void draw_line(int x0, int y0, int x1, int y1, unsigned long color);
     bool is_fullscreen() const { return fullscreen_; }
     void toggle_fullscreen();
     void resize(int new_w, int new_h);

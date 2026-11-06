@@ -22,11 +22,15 @@ struct RenderMode {
 };
 
 extern const RenderMode MODES[];
-inline int mode_count() { return 5; }
+inline int mode_count() { return 6; }
 
 // non-[fn]-table mode function defined in static.cpp
 void static_mode(Grid& grid, Camera& cam, DisplayWin& display,
                  const Vec3& light_dir, int samples);
+
+// bones-mode overlay renderer (modes/bones.cpp)
+void render_bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
+                       const Vec3& light_dir, int samples);
 
 // Current mode helpers (index validated like ui.render_mode()).
 inline const RenderMode& get_mode(int idx) {

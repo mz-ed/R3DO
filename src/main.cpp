@@ -36,11 +36,18 @@ bool blocked_at(const Grid& grid, const Vec3& p) {
 }
 
 void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
-                const Settings& settings, int initial_mode = 1) {
+                const Settings& settings, int initial_mode = 1,
+                Animator* animator = nullptr) {
+    if (!animator) {
+        // own animator for callers that don't manage one
+        static thread_local Animator fallback;
+        animator = &fallback;
+        fallback.clear();
+    }
     SculptEngine sculpt;
     UI ui(grid, cam, display, &sculpt);
     NkUI nkui;
-    Animator animator;
+    ui.set_animator(animator);
     if (!nkui.init(display))
         std::cerr << "Nuklear UI init failed (font missing?)" << std::endl;
     bool mouse_captured = false;
@@ -68,32 +75,62 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     };
 
     auto build_targets = [&](std::vector<std::string>& names,
-                             std::vector<Hittable*>& objs) {
+                             std::vector<Hittable*>& objs,
+                             std::vector<std::pair<int, int>>& bone_refs) {
         names.clear();
         objs.clear();
+        bone_refs.clear();
         for (auto& f : grid.free_objects()) {
             names.push_back(std::string("free#") +
                             std::to_string((long)objs.size()) + " " +
                             f->type_name());
             objs.push_back(f.get());
+            bone_refs.push_back({-1, -1});
         }
-        // CAMERA pseudo-entry: the combo picks it via index == free count.
+        // Per-bone entries (FREE_BONE) follow plain free entries: the combo
+        // index maps through bone_refs to (free_idx, bone).
+        for (size_t fi = 0; fi < grid.free_objects().size(); fi++) {
+            const Skeleton* sk = grid.free_objects()[fi]->skeleton();
+            if (!sk || sk->bones.empty()) continue;
+            for (int bi = 0; bi < (int)sk->bones.size(); bi++) {
+                names.push_back("bone " + std::to_string(bi) + " '" +
+                                sk->bones[(size_t)bi].name + "' free#" +
+                                std::to_string((long)fi));
+                objs.push_back(nullptr);
+                bone_refs.push_back({(int)fi, bi});
+            }
+        }
+        // CAMERA pseudo-entry: the combo picks it via index == last.
         names.push_back("camera");
         objs.push_back(nullptr);
+        bone_refs.push_back({-1, -1});
         // Out-of-range clip targets are dead, not "the last object": mark them
         // so the panel shows a warning instead of silently animating nothing.
-        for (auto& ci : animator.clips)
-            if (ci.target.type == AnimTarget::FREE_OBJECT &&
-                (ci.target.free_idx < 0 ||
-                 ci.target.free_idx >= (int)objs.size()))
+        int free_count = (int)grid.free_objects().size();
+        for (auto& ci : animator->clips) {
+            if ((ci.target.type == AnimTarget::FREE_OBJECT ||
+                 ci.target.type == AnimTarget::FREE_BONE) &&
+                (ci.target.free_idx < 0 || ci.target.free_idx >= free_count))
                 ci.target.free_idx = -1;
+            if (ci.target.type == AnimTarget::FREE_BONE) {
+                const Skeleton* sk =
+                    (ci.target.free_idx >= 0 &&
+                     ci.target.free_idx < (int)grid.free_objects().size())
+                        ? grid.free_objects()[(size_t)ci.target.free_idx]->skeleton()
+                        : nullptr;
+                if (!sk || ci.target.bone < 0 ||
+                    ci.target.bone >= (int)sk->bones.size())
+                    ci.target.bone = -1;
+            }
+        }
     };
 
     auto refresh_ui = [&]() {
         std::vector<std::string> tnames;
         std::vector<Hittable*> tobjs;
-        build_targets(tnames, tobjs);
-        nkui.draw(ui, animator, cam, tnames, tobjs);
+        std::vector<std::pair<int, int>> tbones;
+        build_targets(tnames, tobjs, tbones);
+        nkui.draw(ui, *animator, cam, tnames, tobjs, tbones);
         nkui.render();
     };
 
@@ -107,8 +144,9 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     auto render_and_ui = [&](int block = 1) {
         std::vector<std::string> tnames;
         std::vector<Hittable*> tobjs;
-        build_targets(tnames, tobjs);
-        nkui.draw(ui, animator, cam, tnames, tobjs);
+        std::vector<std::pair<int, int>> tbones;
+        build_targets(tnames, tobjs, tbones);
+        nkui.draw(ui, *animator, cam, tnames, tobjs, tbones);
 
         std::vector<RenderSkip> skip;
         {
@@ -157,13 +195,19 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     // a free object, a grid cell occupant, or the camera pose.
     auto apply_animator = [&]() {
         auto& fobjs = grid.free_objects();
-        for (auto& ci : animator.clips) {
+        for (auto& ci : animator->clips) {
             const AnimTarget& tg = ci.target;
             if (tg.type == AnimTarget::NONE) continue;
             Hittable* obj = nullptr;
             if (tg.type == AnimTarget::FREE_OBJECT) {
                 if (tg.free_idx < 0 || tg.free_idx >= (int)fobjs.size()) continue;
                 obj = fobjs[(size_t)tg.free_idx].get();
+            } else if (tg.type == AnimTarget::FREE_BONE) {
+                if (tg.free_idx < 0 || tg.free_idx >= (int)fobjs.size()) continue;
+                obj = fobjs[(size_t)tg.free_idx].get();
+                if (!obj || !obj->skeleton() || tg.bone < 0 ||
+                    tg.bone >= (int)obj->skeleton()->bones.size())
+                    continue;
             } else if (tg.type == AnimTarget::CELL) {
                 obj = grid.get(tg.i, tg.j, tg.k);
             }
@@ -181,7 +225,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                 }
             }
 
-            float t = animator.clip_time(ci);
+            float t = animator->clip_time(ci);
             Vec3 dp(0, 0, 0), dr(0, 0, 0);
             for (auto& pm : ci.procs) {
                 if (!pm.enabled) continue;
@@ -202,6 +246,15 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             }
             if (!obj) continue;
 
+            if (tg.type == AnimTarget::FREE_BONE) {
+                // keys are local bone space: rotation about the bind joint,
+                // position = extra joint offset; base stays the bind pose
+                Vec3 drk = ci.clip.evaluate(AnimProperty::Rotation, t);
+                obj->set_bone_pose(tg.bone, drk + dr, dp);
+                obj->apply_bones();
+                continue;
+            }
+
             obj->set_anim_offset(dp);
             obj->set_anim_rot(ci.clip.evaluate(AnimProperty::Rotation, t) + dr);
             obj->set_anim_scale(ci.clip.evaluate(AnimProperty::Scale, t));
@@ -212,15 +265,19 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     // Reset only objects clips actually bind to (cheap: a handful of clips).
     auto reset_clip_targets = [&]() {
         auto& fobjs = grid.free_objects();
-        for (auto& ci : animator.clips) {
+        for (auto& ci : animator->clips) {
             Hittable* obj = nullptr;
             if (ci.target.type == AnimTarget::FREE_OBJECT) {
+                if (ci.target.free_idx < 0 || ci.target.free_idx >= (int)fobjs.size()) continue;
+                obj = fobjs[(size_t)ci.target.free_idx].get();
+            } else if (ci.target.type == AnimTarget::FREE_BONE) {
                 if (ci.target.free_idx < 0 || ci.target.free_idx >= (int)fobjs.size()) continue;
                 obj = fobjs[(size_t)ci.target.free_idx].get();
             } else if (ci.target.type == AnimTarget::CELL) {
                 obj = grid.get(ci.target.i, ci.target.j, ci.target.k);
             }
             if (!obj) continue;
+            if (ci.target.type == AnimTarget::FREE_BONE) { obj->reset_bones(); continue; }
             obj->set_anim_offset(Vec3(0, 0, 0));
             obj->set_anim_rot(Vec3(0, 0, 0));
             obj->set_anim_scale(Vec3(1, 1, 1));
@@ -237,7 +294,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
     (void)set_panel_visible;
 
     auto autosave = [&]() {
-        save_scene(grid, cam, SAVE_PATH, ui.render_mode(), ui.palette_idx());
+        save_scene(grid, cam, SAVE_PATH, ui.render_mode(), ui.palette_idx(), animator);
     };
 
     std::cout << "Initial render..." << std::endl;
@@ -254,7 +311,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         bool animating = display.is_mouse_down() ||
                          (ui.ground_mode() && !on_ground) ||
                          ui.is_save_dialog_active() ||
-                         animator.global_playing;
+                         animator->global_playing;
         nkui.begin();
         if (!animating)
             display.wait_event(50);
@@ -270,19 +327,19 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
 
         // Animation tick. When a click is pending, let the input handling
         // below draw the UI once instead of drawing here as well.
-        if (nkui.visible() && animator.global_playing) {
-            animator.update((float)dt);
+        if (nkui.visible() && animator->global_playing) {
+            animator->update((float)dt);
             apply_animator();
-            last_applied_time = animator.global_time;
+            last_applied_time = animator->global_time;
             if (!display.mouse_clicked() && !display.mouse_released())
                 render_and_ui();
         } else if (!nkui.visible()) {
             reset_clip_targets();
-        } else if (last_applied_time != animator.global_time) {
+        } else if (last_applied_time != animator->global_time) {
             // Paused with the panel open: seeking on the timeline previews
             // the pose immediately instead of waiting for PLAY.
             apply_animator();
-            last_applied_time = animator.global_time;
+            last_applied_time = animator->global_time;
             render_and_ui();
         }
 
@@ -429,9 +486,10 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                                     grid.remove_free(rec.hittable);
                                     // Renumber clips so a deletion never
                                     // silently re-targets a different object.
-                                    for (auto& ci : animator.clips) {
-                                        if (ci.target.type != AnimTarget::FREE_OBJECT) continue;
-                                        if (ci.target.free_idx == (int)fi) ci.target.free_idx = -1;
+                                    for (auto& ci : animator->clips) {
+                                        if (ci.target.type != AnimTarget::FREE_OBJECT &&
+                                            ci.target.type != AnimTarget::FREE_BONE) continue;
+                                        if (ci.target.free_idx == (int)fi) { ci.target.free_idx = -1; ci.target.bone = -1; }
                                         else if (ci.target.free_idx > (int)fi) ci.target.free_idx--;
                                     }
                                     deleted = true;
@@ -657,6 +715,7 @@ int main() {
     const int nx = 10, ny = 10, nz = 10;
     Grid grid(nx, ny, nz, 0.8, Vec3(0, 0, 0));
     Camera cam(Vec3(3.0, 1.5, 4.0), 0, -0.15);
+    Animator animator;
 
     while (true) {
         StartAction action = show_start_screen(display, settings);
@@ -665,16 +724,25 @@ int main() {
 
         if (action == StartAction::NEW_SCENE) {
             grid.clear();
-            run_editor(grid, cam, display, settings);
+            animator.clear();
+            run_editor(grid, cam, display, settings, 1, &animator);
         } else if (action == StartAction::SCULPT) {
             grid.clear();
+            animator.clear();
             // run_editor spawns/attaches a sculpt mesh and starts in Sculpt mode
-            run_editor(grid, cam, display, settings, 3);
+            run_editor(grid, cam, display, settings, 3, &animator);
         } else {
             std::string name = show_load_screen(display);
             if (name.empty() || display.is_closed()) continue;
-            load_scene("saves/" + name + ".r3do", grid, &cam);
-            run_editor(grid, cam, display, settings);
+            load_scene("saves/" + name + ".r3do", grid, &cam,
+                       nullptr, nullptr, &animator);
+            // The load-screen click's press/release pair would leak into the
+            // editor loop (release-with-no-motion reads as a central pick,
+            // which for click-to-delete silently removes whatever object
+            // sits at screen center). Flush the stale button state first.
+            display.clear_mouse();
+            display.clear_mouse_released();
+            run_editor(grid, cam, display, settings, 1, &animator);
         }
 
         if (display.is_closed()) return 0;

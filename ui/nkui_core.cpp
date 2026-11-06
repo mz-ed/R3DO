@@ -146,7 +146,8 @@ bool NkUI::wants_keys() const {
 
 void NkUI::draw(UI& ui, Animator& anim, Camera& cam,
                 const std::vector<std::string>& target_names,
-                const std::vector<Hittable*>& target_objs) {
+                const std::vector<Hittable*>& target_objs,
+                const std::vector<std::pair<int, int>>& target_bones) {
     if (!ctx_) return;
 
     int ww = 800, wh = 600;
@@ -157,7 +158,7 @@ void NkUI::draw(UI& ui, Animator& anim, Camera& cam,
     }
 
     draw_sidebar(ui, ww, wh);
-    draw_anim_panel(anim, cam, target_names, target_objs, wh);
+    draw_anim_panel(anim, cam, target_names, target_objs, target_bones, wh);
     draw_save_modal(ui, ww, wh);
     draw_hmap_modal(ui, ww, wh);
 

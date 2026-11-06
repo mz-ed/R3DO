@@ -305,6 +305,24 @@ void DisplayWin::fill_rect(int x, int y, int fw, int fh, unsigned long color) {
             data_[py * width_ + px] = (unsigned int)color;
 }
 
+void DisplayWin::draw_line(int x0, int y0, int x1, int y1, unsigned long color) {
+    XSetForeground(d, gc, color);
+    XDrawLine(d, w, gc, x0, y0, x1, y1);
+    // same Bresenham into the framebuffer so update() keeps it visible
+    int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        if (x0 >= 0 && x0 < width_ && y0 >= 0 && y0 < height_)
+            data_[(size_t)y0 * width_ + (size_t)x0] = (unsigned int)color;
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = err * 2;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+        if (std::abs(x0 - x1) > 4096 || std::abs(y0 - y1) > 4096) break;
+    }
+}
+
 void DisplayWin::draw_crosshair(int cx, int cy, int size, unsigned long color) {
     XSetForeground(d, gc, color);
     XFillRectangle(d, w, gc, cx - 1, cy - size, 3, size * 2 + 1);

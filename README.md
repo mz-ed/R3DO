@@ -46,6 +46,20 @@ them with keyframes or procedural modifiers, and drag objects directly in the vi
 ![Overhead mode](docs/img/editor-overhead.png)
 ![Billboard mode](docs/img/editor-billboard.png)
 
+- **Skeletons** — attach a 3-bone chain (root / spine / tip) to any selected
+  mesh or sculpt object via the sidebar **BONES → Add Skeleton**; vertices bind
+  to the nearest joint. Animation clips can then key individual bones
+  (rotation about the bind joint, position = joint offset) so one object can
+  bend and wave without separate parts. The BONES section also edits chains:
+  `+ Bone` hangs a new bone under the selected one, `- Bone` deletes leaf bones
+  (their verts re-bind to the parent), `Set Name` renames, and `Re-link verts`
+  re-binds every vertex to the current joints. Bones follow drags: bind
+  vertices and stored joint offsets translate with the object.
+
+- **Bones render mode** — cycle with `B`: renders the scene like Billboard and
+  overlays every skeleton (joints as dots, links as lines, joint names tagged).
+  Gizmo/selection still work, so you can pick objects while inspecting chains.
+
 - **Heightmap terrain** — drop grayscale PNGs into `maps/`, then **Import HMap**
   in the sidebar (the modal lists every PNG; pixel luminance becomes height on a
   0-3 world-unit ramp sized to the grid). The terrain renders in **Overhead**
@@ -102,14 +116,19 @@ sculpt mode) and **Settings**. **Load Scene** lists all `.r3do` files found in
 
 All scene changes are automatically saved to `saves/default.r3do`. To snapshot a
 scene, click **Save** name the file; loads are picked from the start screen.
-Scene files store objects, transforms, and animation clips. The `terrain` entry
-stores the source path — `.obj` meshes reload as meshes, `.png` heightmaps
-rebuild the heightfield from `maps/` at load time.
+Scene files store objects, transforms, and animation clips. Sculpt meshes save
+as exact vertex/face blobs under `meshes-<save>/`; imported `.obj` meshes save
+by source path. A heightfield terrain with no source path (blank or paint-only
+canvas) is auto-exported to `maps/auto_<save>.png` on the first save.
+
+Bone chains (`bones`/`bone` lines) attach per free object; animation clips can
+target single bones (`anim` lines carry a bone index).
 
 ## Animation Workflow
 
 1. Press `T`, then `+ NEW CLIP`.
-2. Pick a target in the combo: a free object, `cell i,j,k` (enable the cell
+2. Pick a target in the combo: a free object, one of its bones (after
+   `Add Skeleton` in the BONES section), `cell i,j,k` (enable the cell
    checkbox), or `camera`.
 3. Set the key time with the slider, adjust key x/y/z (or press **SYNC FROM TGT**
    / **KEY @ TGT** to capture the target's live pose), then `+ KEY`.

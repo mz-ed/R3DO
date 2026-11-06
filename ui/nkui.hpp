@@ -4,6 +4,7 @@
 #include <X11/Xlib.h>
 #include <string>
 #include <vector>
+#include <utility>
 
 class DisplayWin;
 class Animator;
@@ -42,7 +43,8 @@ public:
 
     void draw(UI& ui, Animator& anim, Camera& cam,
               const std::vector<std::string>& target_names,
-              const std::vector<Hittable*>& target_objs);
+              const std::vector<Hittable*>& target_objs,
+              const std::vector<std::pair<int, int>>& target_bones);
 
     nk_context* ctx() { return ctx_; }
 
@@ -73,6 +75,7 @@ private:
     // sidebar section collapse state
     bool sec_add_ = true;
     bool sec_sculpt_ = true;
+    bool sec_bones_ = true;
     bool sec_actions_ = true;
     bool sec_settings_ = true;
     bool sec_objects_ = true;
@@ -94,7 +97,8 @@ private:
     void draw_sidebar(UI& ui, int ww, int wh);
     void draw_anim_panel(Animator& anim, Camera& cam,
                          const std::vector<std::string>& target_names,
-                         const std::vector<Hittable*>& target_objs, int wh);
+                         const std::vector<Hittable*>& target_objs,
+                         const std::vector<std::pair<int, int>>& target_bones, int wh);
     void draw_save_modal(UI& ui, int ww, int wh);
     void draw_hmap_modal(UI& ui, int ww, int wh);
 };

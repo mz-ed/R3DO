@@ -1,7 +1,7 @@
 #ifndef ANIMATION_H
 #define ANIMATION_H
 
-#include "/home/kali/R3DO/src/v3.hpp"
+#include "v3.hpp"
 #include <vector>
 #include <string>
 #include <map>
@@ -59,10 +59,11 @@ public:
 };
 
 struct AnimTarget {
-    enum Type { NONE, CELL, FREE_OBJECT, CAMERA };
+    enum Type { NONE, CELL, FREE_OBJECT, FREE_BONE, CAMERA };
     Type type = NONE;
     int i = -1, j = -1, k = -1;
     int free_idx = -1;
+    int bone = -1;    // FREE_BONE: bone index inside the free object's skeleton
 };
 
 enum class ProceduralType {

@@ -1,5 +1,6 @@
 #include "sculpt_mesh.hpp"
 #include "mesh.hpp" // for ray_tri_intersect
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
@@ -150,6 +151,9 @@ void SculptMesh::remesh_subdivide() {
 
 void SculptMesh::translate(const Vec3& d){
     for (auto& v: verts_) v.pos += d;
+    // keep the bind pose + stored joints aligned with the moved verts
+    for (auto& v : bind_verts_) v.pos += d;
+    if (skeleton_) for (auto& b : skeleton_->bones) b.offset = b.offset + d;
     // Keep the flat BVH in sync without a rebuild: a pure translation shifts
     // every node box by d and preserves the tree structure, so leaf boxes stay
     // valid and the mesh stays visible at its new location.
@@ -272,4 +276,151 @@ bool SculptMesh::export_obj(const std::string& fn) const {
     for(const auto& v: verts_) out<<"vn "<<v.normal.x<<" "<<v.normal.y<<" "<<v.normal.z<<"\n";
     for(const auto& f: faces_) out<<"f "<<(f.v0+1)<<"//"<<(f.v0+1)<<" "<<(f.v1+1)<<"//"<<(f.v1+1)<<" "<<(f.v2+1)<<"//"<<(f.v2+1)<<"\n";
     return true;
+}
+bool SculptMesh::export_blob(const std::string& path) const {
+    std::ofstream out(path);
+    if (!out) return false;
+    out << "R3SC1\n";
+    out << verts_.size() << " " << faces_.size() << "\n";
+    out.precision(9);
+    for (const auto& v : verts_)
+        out << v.pos.x << " " << v.pos.y << " " << v.pos.z << " "
+            << v.normal.x << " " << v.normal.y << " " << v.normal.z << "\n";
+    for (const auto& f : faces_)
+        out << f.v0 << " " << f.v1 << " " << f.v2 << "\n";
+    return (bool)out;
+}
+
+SculptMesh* SculptMesh::from_blob(const std::string& path, const Vec3& color) {
+    std::ifstream in(path);
+    if (!in) return nullptr;
+    std::string magic;
+    size_t nv = 0, nf = 0;
+    if (!(in >> magic) || magic != "R3SC1") return nullptr;
+    if (!(in >> nv >> nf)) return nullptr;
+    auto* m = new SculptMesh();
+    m->color_ = color;
+    m->verts_.resize(nv);
+    for (auto& v : m->verts_)
+        if (!(in >> v.pos.x >> v.pos.y >> v.pos.z >>
+                  v.normal.x >> v.normal.y >> v.normal.z)) {
+            delete m; return nullptr;
+        }
+    m->faces_.resize(nf);
+    for (auto& f : m->faces_)
+        if (!(in >> f.v0 >> f.v1 >> f.v2)) {
+            delete m; return nullptr;
+        }
+    m->rebuild_normals();
+    m->rebuild_topology(true);
+    m->rebuild_bvh();
+    m->set_path(path);
+    return m;
+}
+
+// ---- skeleton support ----
+static double sculpt_bone_now_s() {
+    return std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void SculptMesh::bind_skeleton(Skeleton* sk) {
+    skeleton_.reset(sk);
+    if (!sk) { bind_verts_.clear(); bind_bone_.clear(); return; }
+    bind_verts_ = verts_;
+    std::vector<Vec3> joints(sk->bones.size());
+    for (int i = 0; i < (int)sk->bones.size(); i++) joints[i] = sk->joint(i);
+    bind_bone_.assign(verts_.size(), 0);
+    for (size_t i = 0; i < verts_.size(); i++) {
+        double best = 0.0; int bi = 0; bool first = true;
+        for (int j = 0; j < (int)joints.size(); j++) {
+            double d = (verts_[i].pos - joints[j]).length();
+            if (first || d < best) { best = d; bi = j; first = false; }
+        }
+        bind_bone_[i] = bi;
+    }
+}
+
+void SculptMesh::set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
+    if (!skeleton_ || bone < 0 || bone >= (int)skeleton_->bones.size()) return;
+    Skeleton::Bone& b = skeleton_->bones[(size_t)bone];
+    b.off = off;
+    double mt[3][3];
+    anim_euler_matrix(rot, b.m, mt);
+    bvh_dirty_ = true;
+}
+
+void SculptMesh::apply_bones() {
+    if (!skeleton_ || bind_bone_.empty() || bind_verts_.empty()) return;
+    const auto& bones = skeleton_->bones;
+    int nb = (int)bones.size();
+    std::vector<Vec3> wt((size_t)nb);
+    std::vector<double> R((size_t)nb * 9);
+    for (int i = 0; i < nb; i++) {
+        const Skeleton::Bone& b = bones[(size_t)i];
+        if (b.parent >= 0) {
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 3; c++) {
+                    double s = 0.0;
+                    for (int k = 0; k < 3; k++)
+                        s += R[(size_t)b.parent * 9 + r * 3 + k] * b.m[k][c];
+                    R[(size_t)i * 9 + r * 3 + c] = s;
+                }
+            Vec3 op   = wt[(size_t)b.parent];
+            Vec3 offb = anim_mat_mul((const double(*)[3])&R[(size_t)b.parent * 9], b.offset + b.off);
+            wt[(size_t)i] = op + offb;
+        } else {
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 3; c++) R[(size_t)i * 9 + r * 3 + c] = b.m[r][c];
+            wt[(size_t)i] = b.offset + b.off;
+        }
+    }
+    std::vector<Vec3> Jb((size_t)nb);
+    for (int i = 0; i < nb; i++) Jb[(size_t)i] = skeleton_->joint(i);
+
+    for (size_t i = 0; i < verts_.size(); i++) {
+        int bi = bind_bone_[i];
+        Vec3 loc = bind_verts_[i].pos - Jb[(size_t)bi];
+        Vec3 offb = anim_mat_mul((const double(*)[3])&R[(size_t)bi * 9], loc);
+        verts_[i].pos = wt[(size_t)bi] + offb;
+    }
+    rebuild_normals();
+    if (bvh_dirty_) {
+        double t = sculpt_bone_now_s();
+        if (t - last_bvh_rebuild_ > 0.25 || last_bvh_rebuild_ == 0.0) {
+            rebuild_bvh();
+            last_bvh_rebuild_ = sculpt_bone_now_s();
+            bvh_dirty_ = false;
+        }
+    }
+}
+
+void SculptMesh::remap_bone_binds(int removed, int replacement) {
+    auto fix = [&](int& e) {
+        if (e == removed) e = replacement < 0 ? 0 : replacement;
+        else if (e > removed) e--;
+    };
+    for (auto& e : bind_bone_) fix(e);
+}
+
+double SculptMesh::bone_span() const {
+    if (verts_.empty()) return 1.0;
+    double lo = 1e30, hi = -1e30;
+    for (const auto& v : verts_) {
+        if (v.pos.y < lo) lo = v.pos.y;
+        if (v.pos.y > hi) hi = v.pos.y;
+    }
+    double s = hi - lo;
+    return s > 0.05 ? s : 1.0;
+}
+
+void SculptMesh::reset_bones() {
+    if (skeleton_) for (auto& b : skeleton_->bones) b.clear_pose();
+    if (!bind_verts_.empty()) {
+        verts_ = bind_verts_;
+        rebuild_normals();
+        rebuild_topology(true);
+        rebuild_bvh();
+        bvh_dirty_ = false;
+    }
 }

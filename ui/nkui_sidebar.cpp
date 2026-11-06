@@ -114,6 +114,59 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
 
     nk_spacing(ctx_, 1);
 
+    // ---- Bones ----
+    nk_layout_row_dynamic(ctx_, 20, 1);
+    if (nk_button_label(ctx_, sec_bones_ ? "-  BONES" : "+  BONES")) sec_bones_ = !sec_bones_;
+    if (sec_bones_) {
+        nk_layout_row_dynamic(ctx_, 24, 1);
+        if (nk_button_label(ctx_, "Add Skeleton")) ui.add_skeleton_to_selected();
+
+        const Skeleton* sk = ui.selected_skeleton();
+        if (sk && !sk->bones.empty()) {
+            int nb = (int)sk->bones.size();
+            int sel = ui.selected_bone();
+            if (sel >= nb) sel = nb - 1;
+            // ---- bone picker ----
+            nk_layout_row_dynamic(ctx_, 20, 1);
+            if (nk_combo_begin_label(ctx_, sel >= 0 ? sk->bones[(size_t)sel].name.c_str() : "^ pick bone",
+                                     nk_vec2((float)UI::SIDEBAR_W - 30, 150))) {
+                nk_layout_row_dynamic(ctx_, 18, 1);
+                for (int i = 0; i < nb; i++) {
+                    char lbl[80];
+                    snprintf(lbl, sizeof(lbl), "%d %s", i, sk->bones[(size_t)i].name.c_str());
+                    if (nk_combo_item_label(ctx_, lbl, NK_TEXT_LEFT))
+                        ui.select_bone_with_name(i);
+                }
+                nk_combo_end(ctx_);
+            }
+            // ---- add / remove row (new bones parent to the selection) ----
+            nk_layout_row_dynamic(ctx_, 24, 2);
+            if (nk_button_label(ctx_, "+ Bone"))  ui.add_bone_to_skeleton();
+            if (nk_button_label(ctx_, "- Bone"))  ui.delete_bone_from_skeleton();
+            // ---- rename row ----
+            nk_layout_row_dynamic(ctx_, 22, 2);
+            nk_edit_string(ctx_, NK_EDIT_SIMPLE, ui.bone_name_buf(),
+                           ui.bone_name_len(), 63, nk_filter_ascii);
+            if (nk_button_label(ctx_, "Set Name"))
+                ui.rename_selected_bone(ui.bone_name_buf());
+            // ---- relink row ----
+            nk_layout_row_dynamic(ctx_, 24, 1);
+            if (nk_button_label(ctx_, "Re-link verts")) ui.relink_selected_bones();
+            nk_layout_row_dynamic(ctx_, 16, 1);
+            nk_label(ctx_, "+ Bone parents to selection", NK_TEXT_LEFT);
+            nk_label(ctx_, "Re-link: bind verts to joints", NK_TEXT_LEFT);
+            nk_label(ctx_, "Bones view: see the chain (B)", NK_TEXT_LEFT);
+        } else if (ui.selected_object() >= 0) {
+            nk_layout_row_dynamic(ctx_, 16, 1);
+            nk_label(ctx_, "no skeleton on this object", NK_TEXT_LEFT);
+        } else {
+            nk_layout_row_dynamic(ctx_, 16, 1);
+            nk_label(ctx_, "select an object in OBJECTS", NK_TEXT_LEFT);
+        }
+    }
+
+    nk_spacing(ctx_, 1);
+
     // ---- Objects ----
     nk_layout_row_dynamic(ctx_, 20, 1);
     if (nk_button_label(ctx_, sec_objects_ ? "-  OBJECTS" : "+  OBJECTS")) sec_objects_ = !sec_objects_;

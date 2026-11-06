@@ -129,6 +129,104 @@ void UI::add_sculpt_mesh() {
     }
 }
 
+void UI::add_skeleton_to_selected() {
+    int sel = selected_obj_;
+    if (sel < 0 || sel >= (int)obj_refs_.size() ||
+        obj_refs_[(size_t)sel].type != ObjRef::FREE) {
+        show_msg("Select a mesh/sculpt object first");
+        return;
+    }
+    int fi = obj_refs_[(size_t)sel].free_idx;
+    if (fi < 0 || fi >= (int)grid.free_objects_.size() || !grid.free_objects_[(size_t)fi]) {
+        show_msg("Invalid object");
+        return;
+    }
+    Hittable* obj = grid.free_objects_[(size_t)fi].get();
+    if (obj->skeleton()) { show_msg("Already has skeleton"); return; }
+    auto* sk = new Skeleton();
+    double span = obj->bone_span();
+    sk->add(-1, "root", Vec3(0, 0, 0));
+    sk->add(0, "spine", Vec3(0, span * 0.3, 0));
+    sk->add(1, "tip",   Vec3(0, span * 0.3, 0));
+    obj->bind_skeleton(sk);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Skeleton added: %d bones", (int)sk->bones.size());
+    show_msg(buf);
+}
+
+Hittable* UI::selected_free_object() {
+    int sel = selected_obj_;
+    if (sel < 0 || sel >= (int)obj_refs_.size() ||
+        obj_refs_[(size_t)sel].type != ObjRef::FREE)
+        return nullptr;
+    int fi = obj_refs_[(size_t)sel].free_idx;
+    if (fi < 0 || fi >= (int)grid.free_objects_.size() ||
+        !grid.free_objects_[(size_t)fi])
+        return nullptr;
+    return grid.free_objects_[(size_t)fi].get();
+}
+
+const Skeleton* UI::selected_skeleton() const {
+    auto* self = const_cast<UI*>(this);
+    Hittable* o = self->selected_free_object();
+    return o ? const_cast<const Hittable*>(o)->skeleton() : nullptr;
+}
+
+void UI::add_bone_to_skeleton() {
+    Hittable* o = selected_free_object();
+    Skeleton* sk = o ? o->skeleton_mut() : nullptr;
+    if (!sk) { show_msg("Select an object with skeleton"); return; }
+    int parent = selected_bone_ >= 0 &&
+                 selected_bone_ < (int)sk->bones.size()
+                     ? selected_bone_ : (int)sk->bones.size() - 1;
+    // a new bone hangs below the current selection (root when nothing picked)
+    double span = o->bone_span();
+    Vec3 off(0, span * 0.15, 0);
+    char name[16];
+    snprintf(name, sizeof(name), "bone%d", (int)sk->bones.size());
+    sk->add(parent, name, off);
+    selected_bone_ = (int)sk->bones.size() - 1;
+    // fresh bone takes over its nearest verts: re-bind sees the full chain
+    o->bind_skeleton(sk);
+    show_msg("Bone added (verts re-linked)");
+}
+
+void UI::delete_bone_from_skeleton() {
+    Hittable* o = selected_free_object();
+    Skeleton* sk = o ? o->skeleton_mut() : nullptr;
+    if (!sk || sk->bones.empty()) { show_msg("No skeleton"); return; }
+    int idx = selected_bone_ >= 0 && selected_bone_ < (int)sk->bones.size()
+                  ? selected_bone_ : -1;
+    if (idx < 0) { show_msg("Select a bone first"); return; }
+    for (const auto& b : sk->bones)
+        if (b.parent == idx) { show_msg("Delete child bones first"); return; }
+    int replacement = sk->bones[(size_t)idx].parent;
+    sk->bones.erase(sk->bones.begin() + idx);
+    // removed id -> parent; ids above shift down by one
+    o->remap_bone_binds(idx, replacement);
+    selected_bone_ = -1;
+    show_msg("Bone removed (binds follow parent)");
+}
+
+void UI::relink_selected_bones() {
+    Hittable* o = selected_free_object();
+    Skeleton* sk = o ? o->skeleton_mut() : nullptr;
+    if (!sk) { show_msg("No skeleton to relink"); return; }
+    o->bind_skeleton(sk);
+    show_msg("Vertices re-linked to current chain");
+}
+
+void UI::rename_selected_bone(const char* name) {
+    Hittable* o = selected_free_object();
+    Skeleton* sk = o ? o->skeleton_mut() : nullptr;
+    if (!sk || selected_bone_ < 0 || selected_bone_ >= (int)sk->bones.size()) {
+        show_msg("Select a bone first");
+        return;
+    }
+    sk->bones[(size_t)selected_bone_].name = name ? name : "";
+    show_msg("Bone renamed");
+}
+
 void UI::do_remesh() {
     if (sculpt_ && sculpt_->active()) {
         sculpt_->active()->remesh_subdivide();
@@ -698,6 +796,7 @@ bool UI::try_place(ShapeType type) {
             const std::string& path = mesh_files_[mesh_idx_];
             Mesh* m = load_obj(path.c_str(), col, c, cs * 0.4);
             if (!m) return false;
+            m->set_path(path);
             grid.add_free(m);
             break;
         }
@@ -738,7 +837,7 @@ void UI::confirm_save() {
     }
     if (!clean.empty()) {
         std::string path = "saves/" + clean + ".r3do";
-        save_scene(grid, cam, path, render_mode_, palette_idx_);
+        save_scene(grid, cam, path, render_mode_, palette_idx_, animator_);
         show_msg(("Saved: " + clean).c_str());
     }
     save_dialog_active_ = false;

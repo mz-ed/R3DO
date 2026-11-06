@@ -1,5 +1,6 @@
 #include "mesh.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -447,6 +448,9 @@ void Mesh::translate(const Vec3& d) {
     for (auto& t : triangles_) {
         t.v0 += d; t.v1 += d; t.v2 += d;
     }
+    // keep the bind pose + stored joints aligned with the moved verts
+    if (bind_) for (auto& t : bind_->tris) { t.v0 += d; t.v1 += d; t.v2 += d; }
+    if (skeleton_) for (auto& b : skeleton_->bones) b.offset = b.offset + d;
     nodes_.clear();
     if (triangles_.empty()) return;
     auto tris = triangles_;
@@ -458,4 +462,134 @@ void Mesh::translate(const Vec3& d) {
     nodes_.clear();
     triangles_ = std::move(tris);
     build_sah(triangles_, 0, (int)triangles_.size());
+}
+
+// ---- skeleton support ----
+static double bone_now_s() {
+    return std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void Mesh::rebuild_bvh() {
+    nodes_.clear();
+    if (triangles_.empty()) return;
+    auto tris = triangles_;
+    build_sah(tris, 0, (int)tris.size());
+    nodes_.clear();
+    triangles_ = std::move(tris);
+    build_sah(triangles_, 0, (int)triangles_.size());
+}
+
+void Mesh::bind_skeleton(Skeleton* sk) {
+    skeleton_.reset(sk);
+    if (!sk) { bind_.reset(); return; }
+    bind_ = std::make_unique<Bind>();
+    bind_->tris = triangles_;
+    // nearest bind-space joint per triangle corner (parents-first chain sum)
+    std::vector<Vec3> joints(sk->bones.size());
+    for (int i = 0; i < (int)sk->bones.size(); i++) joints[i] = sk->joint(i);
+    bind_->bone.assign(bind_->tris.size() * 3, 0);
+    for (size_t f = 0; f < bind_->tris.size(); f++) {
+        const Triangle& t = bind_->tris[f];
+        const Vec3* p[3] = {&t.v0, &t.v1, &t.v2};
+        for (int c = 0; c < 3; c++) {
+            double best = 0.0; int bi = 0; bool first = true;
+            for (int i = 0; i < (int)joints.size(); i++) {
+                double d = ((*p[c]) - joints[i]).length();
+                if (first || d < best) { best = d; bi = i; first = false; }
+            }
+            bind_->bone[f * 3 + c] = bi;
+        }
+    }
+}
+
+void Mesh::set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
+    if (!skeleton_ || bone < 0 || bone >= (int)skeleton_->bones.size()) return;
+    Skeleton::Bone& b = skeleton_->bones[(size_t)bone];
+    b.off = off;
+    double mt[3][3];
+    anim_euler_matrix(rot, b.m, mt);
+    bvh_dirty_ = true;
+}
+
+void Mesh::apply_bones() {
+    if (!skeleton_ || !bind_ || bind_->bone.empty()) return;
+    const auto& bones = skeleton_->bones;
+    int nb = (int)bones.size();
+    // per-frame chain transforms (parents-first)
+    std::vector<Vec3> wt((size_t)nb);
+    std::vector<double> R((size_t)nb * 9);
+    for (int i = 0; i < nb; i++) {
+        const Skeleton::Bone& b = bones[(size_t)i];
+        if (b.parent >= 0) {
+            const double* P = &R[(size_t)b.parent * 9];
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 3; c++) {
+                    double s = 0.0;
+                    for (int k = 0; k < 3; k++) s += P[r * 3 + k] * b.m[k][c];
+                    R[(size_t)i * 9 + r * 3 + c] = s;
+                }
+            Vec3 op = wt[(size_t)b.parent];
+            Vec3 offb = anim_mat_mul((const double(*)[3])&R[(size_t)b.parent * 9], b.offset + b.off);
+            wt[(size_t)i] = op + offb;
+        } else {
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 3; c++) R[(size_t)i * 9 + r * 3 + c] = b.m[r][c];
+            wt[(size_t)i] = b.offset + b.off;
+        }
+    }
+    std::vector<Vec3> Jb((size_t)nb);
+    for (int i = 0; i < nb; i++) Jb[(size_t)i] = skeleton_->joint(i);
+
+    for (size_t f = 0; f < bind_->tris.size(); f++) {
+        const Triangle& bt = bind_->tris[f];
+        const int* pb = &bind_->bone[(size_t)f * 3];
+        const Vec3* in[3] = {&bt.v0, &bt.v1, &bt.v2};
+        Vec3* out[3] = {&triangles_[f].v0, &triangles_[f].v1, &triangles_[f].v2};
+        for (int c = 0; c < 3; c++) {
+            int bi = pb[c];
+            Vec3 loc = (*in[c]) - Jb[(size_t)bi];
+            (*out[c]) = wt[(size_t)bi] + anim_mat_mul((const double(*)[3])&R[(size_t)bi * 9], loc);
+        }
+    }
+    if (bvh_dirty_) {
+        double t = bone_now_s();
+        if (t - last_bvh_rebuild_ > 0.25 || last_bvh_rebuild_ == 0.0) {
+            rebuild_bvh();
+            last_bvh_rebuild_ = t;
+            bvh_dirty_ = false;
+        }
+    }
+}
+
+void Mesh::remap_bone_binds(int removed, int replacement) {
+    if (!bind_) return;
+    auto fix = [&](int& e) {
+        if (e == removed) e = replacement < 0 ? 0 : replacement;
+        else if (e > removed) e--;
+    };
+    for (auto& e : bind_->bone) fix(e);
+}
+
+double Mesh::bone_span() const {
+    if (triangles_.empty()) return 1.0;
+    double lo = 1e30, hi = -1e30;
+    for (const auto& t : triangles_) {
+        for (int c = 0; c < 3; c++) {
+            double y = c == 0 ? t.v0.y : (c == 1 ? t.v1.y : t.v2.y);
+            if (y < lo) lo = y;
+            if (y > hi) hi = y;
+        }
+    }
+    double s = hi - lo;
+    return s > 0.05 ? s : 1.0;
+}
+
+void Mesh::reset_bones() {
+    if (skeleton_) for (auto& b : skeleton_->bones) b.clear_pose();
+    if (bind_) {
+        triangles_ = bind_->tris;
+        rebuild_bvh();
+        bvh_dirty_ = false;
+    }
 }
