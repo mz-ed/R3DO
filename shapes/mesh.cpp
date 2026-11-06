@@ -481,7 +481,9 @@ void Mesh::rebuild_bvh() {
 }
 
 void Mesh::bind_skeleton(Skeleton* sk) {
-    skeleton_.reset(sk);
+    // reset() would delete the old pointer UNCONDITIONALLY - re-binding the
+    // skeleton we already own would free it out from under the caller (UAF).
+    if (skeleton_.get() != sk) skeleton_.reset(sk);
     if (!sk) { bind_.reset(); return; }
     bind_ = std::make_unique<Bind>();
     bind_->tris = triangles_;
@@ -569,6 +571,24 @@ void Mesh::remap_bone_binds(int removed, int replacement) {
         else if (e > removed) e--;
     };
     for (auto& e : bind_->bone) fix(e);
+}
+
+Vec3 Mesh::bone_anchor() const {
+    if (triangles_.empty()) return get_center();
+    double lx = 1e30, ly = 1e30, lz = 1e30, hx = -1e30, hy = -1e30, hz = -1e30;
+    for (const auto& t : triangles_) {
+        const Vec3* p[3] = {&t.v0, &t.v1, &t.v2};
+        for (int c = 0; c < 3; c++) {
+            double x = p[c]->x, y = p[c]->y, z = p[c]->z;
+            if (x < lx) lx = x;
+            if (x > hx) hx = x;
+            if (y < ly) ly = y;
+            if (y > hy) hy = y;
+            if (z < lz) lz = z;
+            if (z > hz) hz = z;
+        }
+    }
+    return Vec3((lx + hx) * 0.5, (ly + hy) * 0.5, (lz + hz) * 0.5);
 }
 
 double Mesh::bone_span() const {

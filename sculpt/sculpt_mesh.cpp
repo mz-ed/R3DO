@@ -325,7 +325,9 @@ static double sculpt_bone_now_s() {
 }
 
 void SculptMesh::bind_skeleton(Skeleton* sk) {
-    skeleton_.reset(sk);
+    // reset() would delete the old pointer UNCONDITIONALLY - re-binding the
+    // skeleton we already own would free it out from under the caller (UAF).
+    if (skeleton_.get() != sk) skeleton_.reset(sk);
     if (!sk) { bind_verts_.clear(); bind_bone_.clear(); return; }
     bind_verts_ = verts_;
     std::vector<Vec3> joints(sk->bones.size());
@@ -401,6 +403,21 @@ void SculptMesh::remap_bone_binds(int removed, int replacement) {
         else if (e > removed) e--;
     };
     for (auto& e : bind_bone_) fix(e);
+}
+
+Vec3 SculptMesh::bone_anchor() const {
+    if (verts_.empty()) return get_center();
+    double lx = 1e30, ly = 1e30, lz = 1e30, hx = -1e30, hy = -1e30, hz = -1e30;
+    for (const auto& v : verts_) {
+        double x = v.pos.x, y = v.pos.y, z = v.pos.z;
+        if (x < lx) lx = x;
+        if (x > hx) hx = x;
+        if (y < ly) ly = y;
+        if (y > hy) hy = y;
+        if (z < lz) lz = z;
+        if (z > hz) hz = z;
+    }
+    return Vec3((lx + hx) * 0.5, (ly + hy) * 0.5, (lz + hz) * 0.5);
 }
 
 double SculptMesh::bone_span() const {

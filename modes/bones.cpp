@@ -2,7 +2,6 @@
 #include "billboard.hpp"
 #include "render.hpp"
 #include "v3.hpp"
-#include <cstdio>
 #include <vector>
 
 // Bones mode: standard billboard view with every skeleton overlaid — joints
@@ -51,10 +50,7 @@ void render_bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
         std::vector<Vec3> joints((size_t)sk->bones.size());
         for (int bi = 0; bi < (int)sk->bones.size(); bi++) joints[(size_t)bi] = sk->joint(bi);
 
-        printf("[bones] obj %zu j0 %.2f %.2f %.2f | center %.2f %.2f %.2f | cam %.2f %.2f %.2f\n",
-               fi, joints[0].x, joints[0].y, joints[0].z,
-               obj->get_center().x, obj->get_center().y, obj->get_center().z,
-               cam.pos.x, cam.pos.y, cam.pos.z);
+
 
         // links
         for (int bi = 0; bi < (int)sk->bones.size(); bi++) {

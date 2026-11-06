@@ -10,7 +10,6 @@
 #include "render.hpp"
 #include <chrono>
 #include <cctype>
-#include <cstdio>
 #include <cstring>
 #include <filesystem>
 
@@ -145,7 +144,8 @@ void UI::add_skeleton_to_selected() {
     if (obj->skeleton()) { show_msg("Already has skeleton"); return; }
     auto* sk = new Skeleton();
     double span = obj->bone_span();
-    sk->add(-1, "root", Vec3(0, 0, 0));
+    Vec3 base = obj->bone_anchor();
+    sk->add(-1, "root", base);
     sk->add(0, "spine", Vec3(0, span * 0.3, 0));
     sk->add(1, "tip",   Vec3(0, span * 0.3, 0));
     obj->bind_skeleton(sk);

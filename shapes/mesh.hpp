@@ -39,6 +39,7 @@ public:
     void apply_bones() override;
     void reset_bones() override;
     double bone_span() const override;
+    Vec3 bone_anchor() const override;
     void remap_bone_binds(int removed, int replacement) override;
 
     struct FlatNode {

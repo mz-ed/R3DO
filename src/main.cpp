@@ -19,6 +19,16 @@
 #include <iostream>
 #include <cmath>
 #include <chrono>
+#include <execinfo.h>
+#include <csignal>
+// SIGABRT backtrace: temporary debugging helper (uncaught exception aborts)
+static void sigv_bt_abrt(int) {
+    void* bt[32]; int n = backtrace(bt, 32);
+    fprintf(stderr, "\nSIGABRT BACKTRACE\n");
+    backtrace_symbols_fd(bt, n, 2);
+    _exit(97);
+}
+struct SigvInit_ABRT { SigvInit_ABRT() { signal(SIGABRT, sigv_bt_abrt); } } sigv_init_abrt_;
 
 namespace {
 

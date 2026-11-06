@@ -62,18 +62,26 @@ public:
     virtual const char* type_name() const { return "unknown"; }
     virtual Vec3 get_color() const { return Vec3(0,0,0); }
     virtual Vec3 get_center() const { return anim_offset_; }
+    // anchor for new chains: bbox center of the geometry (offsets share the
+    // vert space, so this places the chain where the mesh actually is)
+    virtual Vec3 bone_anchor() const { return get_center(); }
     virtual void translate(const Vec3& d) { (void)d; }
     virtual std::string mesh_path() const { return ""; }
 
     // ---- skeleton support ----
     // Every object may carry a bone chain; geometric classes (Mesh,
     // SculptMesh) override bind/apply/reset to bake vertex poses.
-    void attach_skeleton(Skeleton* sk) { skeleton_.reset(sk); }
+    // guardedattach: never frees the pointer we were handed if it is already ours
+    void attach_skeleton(Skeleton* sk) {
+        if (skeleton_.get() != sk) skeleton_.reset(sk);
+    }
     const Skeleton* skeleton() const { return skeleton_.get(); }
     Skeleton* skeleton_mut() { return skeleton_.get(); }
 
     // Skeleton without binds: bones exist but nothing follows them yet.
-    virtual void bind_skeleton(Skeleton* sk) { skeleton_.reset(sk); }
+    virtual void bind_skeleton(Skeleton* sk) {
+        if (skeleton_.get() != sk) skeleton_.reset(sk);
+    }
     virtual void set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
         if (!skeleton_ || bone < 0 || bone >= (int)skeleton_->bones.size()) return;
         Skeleton::Bone& b = skeleton_->bones[(size_t)bone];
