@@ -44,3 +44,8 @@ const RenderMode MODES[] = {
     { "Static",    static_mode,     false },
     { "Bones",     bones_mode,      false },
 };
+
+// overlay selection hook (see render_modes.hpp): written by the UI when the
+// sidebar picks an object/bone, read by the bones renderer
+Hittable* g_sel_object = nullptr;
+int g_sel_bone = -1;

@@ -72,6 +72,8 @@ public:
     double bone_span() const override;
     Vec3 bone_anchor() const override;
     void remap_bone_binds(int removed, int replacement) override;
+    int bone_bound_count(int bone) const override;
+    bool bone_bound_vert(int bone, int idx, Vec3& out) const override;
 
     const std::vector<std::vector<int>>& adj_faces() const { return adj_faces_; }
 
@@ -83,8 +85,11 @@ private:
     std::vector<FN2> fn2_;
     std::vector<int> tri_list_;
     // skeleton bind snapshot: bind positions + per-vertex bone index
+    // (two-joint weighted skinning: secondary joint + blend weight)
     std::vector<SculptVertex> bind_verts_;
     std::vector<int> bind_bone_;
+    std::vector<int> bind_bone2_;
+    std::vector<unsigned char> bind_wt_;
     bool bvh_dirty_ = false;
     double last_bvh_rebuild_ = 0.0;
     Vec3 color_;

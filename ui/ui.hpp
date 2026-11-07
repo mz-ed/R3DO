@@ -78,7 +78,7 @@ public:
     // camera-facing plane through the grab point, release to commit.
     bool start_drag(int mx, int my);
     void drag_update(int mx, int my, bool shift_held);
-    void end_drag() { dragging_ = false; }
+    void end_drag(); // commits object drags; re-binds after a joint drag
     void cancel_drag();
     bool is_dragging() const { return dragging_; }
     bool drag_center(Vec3& out) const; // visual center while dragging
@@ -101,10 +101,32 @@ public:
     void relink_selected_bones();
     void rename_selected_bone(const char* name);
 
+    // bone gizmo (Bones mode): press near a joint to grab the bone; dragging
+    // edits its bind offset, or its live pose translation when a pose is
+    // active (drag-to-bend in the pose preview)
+    bool start_bone_drag(int mx, int my);
+    bool is_bone_dragging() const { return bone_dragging_; }
+    void bone_drag_update(int mx, int my);
+
+    // pose mode: absolute euler sliders (degrees) on the selected bone, plus
+    // straighten. pose_slider_tick applies only when a value changed.
+    float pose_roll() const { return pose_roll_; }   // x axis
+    float pose_yaw() const { return pose_yaw_; }     // y axis
+    float pose_pitch() const { return pose_pitch_; } // z axis
+    void set_pose_roll(float v) { pose_roll_ = v; }
+    void set_pose_yaw(float v) { pose_yaw_ = v; }
+    void set_pose_pitch(float v) { pose_pitch_ = v; }
+    void pose_slider_tick();
+    void pose_straighten();
+
     int selected_bone() const { return selected_bone_; }
-    void set_selected_bone(int b) { selected_bone_ = b; }
+    void set_selected_bone(int b) { selected_bone_ = b; sync_selection_hook(); }
+    // writes the overlay-selection hook globals (modes/render_modes.hpp) so
+    // the bones renderer highlights the picked joint and tints its verts
+    void sync_selection_hook();
     void select_bone_with_name(int b) {
         selected_bone_ = b;
+        sync_selection_hook();
         const Skeleton* sk = selected_skeleton();
         bone_name_[0] = 0; bone_name_len_ = 0;
         if (sk && b >= 0 && b < (int)sk->bones.size()) {
@@ -211,6 +233,18 @@ private:
         int ci = 0, cj = 0, ck = 0;
     };
     DragState drag_;
+
+    // bone gizmo drag state (see start_bone_drag)
+    bool bone_dragging_ = false;
+    int bone_drag_bone_ = -1;
+    Hittable* bone_drag_obj_ = nullptr;
+    Skeleton* bone_drag_sk_ = nullptr;
+    int bone_drag_mx_ = 0, bone_drag_my_ = 0;
+    bool bone_drag_pose_ = false; // true: drag edits live pose off
+
+    // pose sliders (degrees) + last values actually applied
+    float pose_roll_ = 0, pose_yaw_ = 0, pose_pitch_ = 0;
+    Vec3 pose_applied_ = Vec3(0, 0, 0);
 
     struct ObjRef {
         enum Type { CELL, FREE } type;

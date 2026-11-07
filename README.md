@@ -56,6 +56,27 @@ them with keyframes or procedural modifiers, and drag objects directly in the vi
   re-binds every vertex to the current joints. Bones follow drags: bind
   vertices and stored joint offsets translate with the object.
 
+- **Bone gizmo (Bones mode)** — in the Bones render mode, press on a joint dot
+  to grab that bone (the sidebar follows the pick); drag moves the joint and
+  everything hanging under it. If the chain is at rest, the drag edits the
+  bind-space offset and the verts re-bind on release; if a pose is active the
+  drag bends the live preview instead (pose translation, nothing re-binds).
+  The verts/corners bound to the selected bone are tinted orange so rig
+  regions are visible.
+
+- **Weighted skinning** — binds carry two joints per vertex/corner: the two
+  nearest bind-space joints blended by inverse distance, so folds deform with
+  one smooth seam instead of a hard crease between bone regions.
+
+- **Pose mode** — the BONES section has roll/yaw/pitch sliders (degrees,
+  euler `Rz*Ry*Rx`: roll = screen-plane spin, yaw = turn, pitch = nod) on the
+  selected bone, applied live; `Straighten` snaps the chain back to rest.
+  Sliders and clip animation both write live poses; straighten clears them.
+
+- **Scope note** — each object owns at most one skeleton and bones only skin
+  their own object's geometry; cross-object parenting (a limb object hanging
+  off another object's bone) is not supported.
+
 - **Bones render mode** — cycle with `B`: renders the scene like Billboard and
   overlays every skeleton (joints as dots, links as lines, joint names tagged).
   Gizmo/selection still work, so you can pick objects while inspecting chains.

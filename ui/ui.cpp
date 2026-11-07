@@ -216,6 +216,38 @@ void UI::relink_selected_bones() {
     show_msg("Vertices re-linked to current chain");
 }
 
+// Pose mode: absolute euler sliders on the selected bone. Applied the moment
+// a value differs from the last applied triple, so unpicked sliders never
+// clobber an existing pose.
+void UI::pose_slider_tick() {
+    Hittable* obj = selected_free_object();
+    if (!obj) return;
+    Skeleton* sk = obj->skeleton_mut();
+    if (!sk) return;
+    int b = selected_bone_;
+    if (b < 0 || b >= (int)sk->bones.size()) return;
+    Vec3 want(pose_roll_, pose_yaw_, pose_pitch_); // degrees
+    Vec3& ap = pose_applied_;
+    if (std::abs(want.x - ap.x) < 0.01 && std::abs(want.y - ap.y) < 0.01 &&
+        std::abs(want.z - ap.z) < 0.01) return;
+    const double D2R = M_PI / 180.0;
+    // euler order Rz*Ry*Rx: pitch nods about X (bend), yaw turns about Y,
+    // roll spins in the screen plane about Z (the view axis)
+    Vec3 rot(pose_pitch_ * D2R, pose_yaw_ * D2R, pose_roll_ * D2R);
+    obj->set_bone_pose(b, rot, sk->bones[(size_t)b].off); // keep live offset
+    obj->apply_bones();
+    pose_applied_ = want;
+}
+
+void UI::pose_straighten() {
+    Hittable* obj = selected_free_object();
+    if (!obj) return;
+    obj->reset_bones();
+    obj->apply_bones();
+    pose_roll_ = pose_yaw_ = pose_pitch_ = 0.0f;
+    pose_applied_ = Vec3(0, 0, 0);
+}
+
 void UI::rename_selected_bone(const char* name) {
     Hittable* o = selected_free_object();
     Skeleton* sk = o ? o->skeleton_mut() : nullptr;
@@ -371,11 +403,20 @@ const std::vector<std::string>* UI::object_list() {
     }
     if (selected_obj_ < 0 && !obj_names_.empty()) selected_obj_ = 0;
     if (selected_obj_ >= (int)obj_names_.size()) selected_obj_ = -1;
+    sync_selection_hook(); // refs rebuilt: keep the overlay hook valid
     return &obj_names_;
 }
 
+void UI::sync_selection_hook() {
+    g_sel_bone = selected_bone_;
+    g_sel_object = selected_free_object();
+    // switching bones: baseline the pose sliders at what they display so a
+    // stale "applied" value can't skip the first change on the new bone
+    pose_applied_ = Vec3(pose_roll_, pose_yaw_, pose_pitch_);
+}
+
 void UI::select_object(int i) {
-    if (i < 0) { selected_obj_ = -1; return; }
+    if (i < 0) { selected_obj_ = -1; sync_selection_hook(); return; }
     if (i >= (int)obj_names_.size()) return;
     selected_obj_ = i;
 }
@@ -410,6 +451,115 @@ void UI::relocate_cell(int sel, const Vec3& newc) {
         snprintf(buf, sizeof(buf), "free#%d %s", r.free_idx, obj->type_name());
         obj_names_[(size_t)sel] = buf;
     }
+}
+
+// ================= bone gizmo (Bones mode) =================
+
+// Press-resolve for the joint gizmo: find the chain joint nearest to the
+// mouse (projected like the overlay does) within a comfortable pick radius.
+// On hit: select the owning object + that bone and arm the drag.
+bool UI::start_bone_drag(int mx, int my) {
+    object_list(); // refresh refs so select_object below stays valid
+    int w = display.width(), h = display.height();
+    double vw = VIEWPORT_HEIGHT * w / h;
+    Vec3 fwd = cam.forward();
+    Vec3 rgt = cam.right();
+    Vec3 upv = cross(rgt, fwd);
+
+    Skeleton* best_sk = nullptr;
+    Hittable* best_obj = nullptr;
+    int best_bone = -1, best_fi = -1;
+    double best_d2 = 16.0 * 16.0; // ~16 px pick radius
+
+    const auto& fobjs = grid.free_objects();
+    for (size_t fi = 0; fi < fobjs.size(); fi++) {
+        Hittable* obj = fobjs[fi].get();
+        Skeleton* sk = obj ? obj->skeleton_mut() : nullptr;
+        if (!sk || sk->bones.empty()) continue;
+        for (int bi = 0; bi < (int)sk->bones.size(); bi++) {
+            Vec3 jp = sk->joint((size_t)bi);
+            Vec3 rel = jp - cam.pos;
+            double depth = dot(rel, fwd);
+            if (depth <= 0.05) continue;
+            double rx = dot(rel, rgt), ry = dot(rel, upv);
+            double sx = w / 2.0 + (rx / depth) * FOCAL_LENGTH * w / vw;
+            double sy = h / 2.0 - (ry / depth) * FOCAL_LENGTH * h / VIEWPORT_HEIGHT;
+            double dx = sx - mx, dy = sy - my;
+            double d2 = dx * dx + dy * dy;
+            if (d2 < best_d2) {
+                best_d2 = d2;
+                best_sk = sk; best_obj = obj; best_bone = bi; best_fi = (int)fi;
+            }
+        }
+    }
+    if (!best_sk) return false;
+
+    select_object(-1);
+    for (int si = 0; si < (int)obj_refs_.size(); si++) {
+        const ObjRef& r = obj_refs_[(size_t)si];
+        if (r.type == ObjRef::FREE && r.free_idx == best_fi) {
+            select_object(si);
+            break;
+        }
+    }
+    select_bone_with_name(best_bone);
+
+    bone_dragging_ = true;
+    bone_drag_obj_ = best_obj;
+    bone_drag_sk_ = best_sk;
+    bone_drag_bone_ = best_bone;
+    bone_drag_mx_ = mx;
+    bone_drag_my_ = my;
+    // pose mode: when a live pose is active, the drag bends the preview
+    // (pose translation) instead of editing the bind offsets
+    bone_drag_pose_ = best_obj->bones_posed();
+    dragging_ = true; // release path routes through end_drag like object drags
+    return true;
+}
+
+// Per-frame mouse update for the joint gizmo: convert the screen delta into
+// a world-space move along the camera plane (same projection as the overlay)
+// and apply it to the bone's bind offset — or live pose translation when a
+// pose is active. Children follow: later joints sum their parents' offsets.
+void UI::bone_drag_update(int mx, int my) {
+    Hittable* obj = bone_drag_obj_;
+    Skeleton* sk = bone_drag_sk_;
+    int bi = bone_drag_bone_;
+    if (!obj || !sk || obj->skeleton() != sk || bi < 0 ||
+        bi >= (int)sk->bones.size()) {
+        bone_dragging_ = false;
+        dragging_ = false;
+        return;
+    }
+    int h = display.height();
+    Vec3 fwd = cam.forward();
+    Vec3 rgt = cam.right();
+    Vec3 upv = cross(rgt, fwd);
+
+    Vec3 jp = sk->joint((size_t)bi);
+    Vec3 rel = jp - cam.pos;
+    double depth = dot(rel, fwd);
+    if (depth <= 0.05) {
+        bone_drag_mx_ = mx; bone_drag_my_ = my;
+        return;
+    }
+    // per-pixel world size at this joint's depth (inverse of project())
+    double f = depth * VIEWPORT_HEIGHT / (FOCAL_LENGTH * h);
+    int ddx = mx - bone_drag_mx_, ddy = my - bone_drag_my_;
+    bool shift_held = display.key_held(XK_Shift_L) || display.key_held(XK_Shift_R);
+    Vec3 delta = shift_held
+        ? upv * (-ddy * f)                       // vertical only, like objects
+        : rgt * (ddx * f) + upv * (-ddy * f);
+
+    Skeleton::Bone& b = sk->bones[(size_t)bi];
+    if (bone_drag_pose_) {
+        b.off = b.off + delta;
+        obj->apply_bones(); // preview bends under the cursor
+    } else {
+        b.offset = b.offset + delta; // rest-pose rig edit (bind space)
+    }
+    bone_drag_mx_ = mx;
+    bone_drag_my_ = my;
 }
 
 // ================= mouse drag gizmo =================
@@ -504,6 +654,9 @@ bool UI::rehome_free(int sel, int i, int j, int k) {
 }
 
 bool UI::start_drag(int mx, int my) {
+    // Bones mode: the mouse may be on a joint — those belong to the bone
+    // gizmo, not the object-drag gizmo.
+    if (render_mode() == MODE_BONES && start_bone_drag(mx, my)) return true;
     HitRecord rec;
     if (!pick_at_mouse(grid, cam, display.width(), display.height(), mx, my, rec))
         return false;
@@ -535,6 +688,8 @@ bool UI::start_drag(int mx, int my) {
 
 void UI::drag_update(int mx, int my, bool shift_held) {
     if (!dragging_) return;
+    // bone gizmo: separate path, uses screen delta instead of a grab ray
+    if (bone_dragging_) { bone_drag_update(mx, my); return; }
     Hittable* obj = drag_obj();
     if (!obj) { dragging_ = false; return; }
     ObjRef& r = obj_refs_[(size_t)drag_.sel];
@@ -583,8 +738,32 @@ void UI::drag_update(int mx, int my, bool shift_held) {
     }
 }
 
+void UI::end_drag() {
+    if (bone_dragging_) {
+        bone_dragging_ = false;
+        Hittable* obj = bone_drag_obj_;
+        Skeleton* sk = bone_drag_sk_;
+        bone_drag_obj_ = nullptr;
+        bone_drag_sk_ = nullptr;
+        bone_drag_bone_ = -1;
+        dragging_ = false;
+        // bind-edit drag done at rest: re-bind so the moved joint re-claims
+        // the nearest verts (safe: re-binding our own skeleton no longer
+        // frees it). Pose drags never re-bind — that would snapshot the
+        // posed verts and break the rig.
+        if (obj && sk && obj->skeleton() == sk && !bone_drag_pose_)
+            obj->bind_skeleton(sk);
+        return;
+    }
+    dragging_ = false;
+}
+
 void UI::cancel_drag() {
     dragging_ = false;
+    bone_dragging_ = false;
+    bone_drag_obj_ = nullptr;
+    bone_drag_sk_ = nullptr;
+    bone_drag_bone_ = -1;
     Hittable* obj = nullptr;
     // validate sel after dragging_ is cleared (drag_obj requires dragging_)
     if (drag_.sel >= 0 && drag_.sel < (int)obj_refs_.size()) {

@@ -152,10 +152,25 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
             // ---- relink row ----
             nk_layout_row_dynamic(ctx_, 24, 1);
             if (nk_button_label(ctx_, "Re-link verts")) ui.relink_selected_bones();
+            // ---- pose sliders (per-bone live preview) ----
+            nk_layout_row_dynamic(ctx_, 16, 3);
+            nk_label(ctx_, "roll", NK_TEXT_LEFT);
+            nk_label(ctx_, "yaw", NK_TEXT_LEFT);
+            nk_label(ctx_, "pitch", NK_TEXT_LEFT);
+            nk_layout_row_dynamic(ctx_, 18, 3);
+            float vr = ui.pose_roll();
+            if (nk_slider_float(ctx_, -180.0f, &vr, 180.0f, 0.5f)) ui.set_pose_roll(vr);
+            float vy = ui.pose_yaw();
+            if (nk_slider_float(ctx_, -180.0f, &vy, 180.0f, 0.5f)) ui.set_pose_yaw(vy);
+            float vp = ui.pose_pitch();
+            if (nk_slider_float(ctx_, -180.0f, &vp, 180.0f, 0.5f)) ui.set_pose_pitch(vp);
+            ui.pose_slider_tick(); // applies only when a value changed
+            nk_layout_row_dynamic(ctx_, 24, 1);
+            if (nk_button_label(ctx_, "Straighten")) ui.pose_straighten();
             nk_layout_row_dynamic(ctx_, 16, 1);
             nk_label(ctx_, "+ Bone parents to selection", NK_TEXT_LEFT);
             nk_label(ctx_, "Re-link: bind verts to joints", NK_TEXT_LEFT);
-            nk_label(ctx_, "Bones view: see the chain (B)", NK_TEXT_LEFT);
+            nk_label(ctx_, "Bones view: drag joints (B)", NK_TEXT_LEFT);
         } else if (ui.selected_object() >= 0) {
             nk_layout_row_dynamic(ctx_, 16, 1);
             nk_label(ctx_, "no skeleton on this object", NK_TEXT_LEFT);

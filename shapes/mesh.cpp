@@ -491,16 +491,30 @@ void Mesh::bind_skeleton(Skeleton* sk) {
     std::vector<Vec3> joints(sk->bones.size());
     for (int i = 0; i < (int)sk->bones.size(); i++) joints[i] = sk->joint(i);
     bind_->bone.assign(bind_->tris.size() * 3, 0);
+    bind_->bone2.assign(bind_->tris.size() * 3, -1);
+    bind_->wt.assign(bind_->tris.size() * 3, 255);
     for (size_t f = 0; f < bind_->tris.size(); f++) {
         const Triangle& t = bind_->tris[f];
         const Vec3* p[3] = {&t.v0, &t.v1, &t.v2};
         for (int c = 0; c < 3; c++) {
-            double best = 0.0; int bi = 0; bool first = true;
+            double best = 0.0, second = 0.0; int bi = 0, bj = -1; bool first = true;
             for (int i = 0; i < (int)joints.size(); i++) {
                 double d = ((*p[c]) - joints[i]).length();
-                if (first || d < best) { best = d; bi = i; first = false; }
+                if (first || d < best) {
+                    if (!first) { second = best; bj = bi; }
+                    best = d; bi = i; first = false;
+                } else if (bj < 0 || d < second) {
+                    second = d; bj = i;
+                }
             }
             bind_->bone[f * 3 + c] = bi;
+            if (bj >= 0 && second > 1e-12) {
+                // inverse-distance blend of the two nearest joints softens
+                // the crease: w0 = (1/d0)/(1/d0 + 1/d1) = d1/(d0+d1)
+                double w0 = second / (best + second);
+                bind_->bone2[f * 3 + c] = bj;
+                bind_->wt[f * 3 + c] = (unsigned char)(w0 * 255.0 + 0.5);
+            }
         }
     }
 }
@@ -551,7 +565,18 @@ void Mesh::apply_bones() {
         for (int c = 0; c < 3; c++) {
             int bi = pb[c];
             Vec3 loc = (*in[c]) - Jb[(size_t)bi];
-            (*out[c]) = wt[(size_t)bi] + anim_mat_mul((const double(*)[3])&R[(size_t)bi * 9], loc);
+            Vec3 outp = wt[(size_t)bi] + anim_mat_mul((const double(*)[3])&R[(size_t)bi * 9], loc);
+            // two-joint blend: soften creases where fold regions meet
+            int bj = bind_->bone2[(size_t)f * 3 + c];
+            if (bj >= 0 && bj != bi) {
+                unsigned char wq = bind_->wt[(size_t)f * 3 + c];
+                if (wq < 255) {
+                    Vec3 loc2 = (*in[c]) - Jb[(size_t)bj];
+                    Vec3 out2 = wt[(size_t)bj] + anim_mat_mul((const double(*)[3])&R[(size_t)bj * 9], loc2);
+                    outp = outp + (out2 - outp) * (1.0 - (double)wq / 255.0);
+                }
+            }
+            (*out[c]) = outp;
         }
     }
     if (bvh_dirty_) {
@@ -571,6 +596,11 @@ void Mesh::remap_bone_binds(int removed, int replacement) {
         else if (e > removed) e--;
     };
     for (auto& e : bind_->bone) fix(e);
+    for (auto& e : bind_->bone2) {
+        if (e == removed) { e = -1; }  // dropped secondary: single-joint skin
+        else if (e == replacement) e = replacement < 0 ? -1 : replacement;
+        else if (e > removed) e--;
+    }
 }
 
 Vec3 Mesh::bone_anchor() const {
@@ -612,4 +642,29 @@ void Mesh::reset_bones() {
         rebuild_bvh();
         bvh_dirty_ = false;
     }
+}
+
+int Mesh::bone_bound_count(int bone) const {
+    if (!bind_) return 0;
+    int n = 0;
+    for (size_t i = 0; i < bind_->bone.size(); i++)
+        if (bind_->bone[i] == bone) n++;
+    return n;
+}
+
+bool Mesh::bone_bound_vert(int bone, int idx, Vec3& out) const {
+    if (!bind_) return false;
+    int seen = 0;
+    for (size_t f = 0; f < bind_->tris.size(); f++) {
+        for (int c = 0; c < 3; c++) {
+            if (bind_->bone[f * 3 + c] != bone) continue;
+            if (seen++ == idx) {
+                const Triangle& t = triangles_[f];
+                const Vec3* pv = c == 0 ? &t.v0 : (c == 1 ? &t.v1 : &t.v2);
+                out = *pv;
+                return true;
+            }
+        }
+    }
+    return false;
 }

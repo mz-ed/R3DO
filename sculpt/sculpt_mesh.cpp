@@ -328,18 +328,32 @@ void SculptMesh::bind_skeleton(Skeleton* sk) {
     // reset() would delete the old pointer UNCONDITIONALLY - re-binding the
     // skeleton we already own would free it out from under the caller (UAF).
     if (skeleton_.get() != sk) skeleton_.reset(sk);
-    if (!sk) { bind_verts_.clear(); bind_bone_.clear(); return; }
+    if (!sk) { bind_verts_.clear(); bind_bone_.clear(); bind_bone2_.clear(); bind_wt_.clear(); return; }
     bind_verts_ = verts_;
     std::vector<Vec3> joints(sk->bones.size());
     for (int i = 0; i < (int)sk->bones.size(); i++) joints[i] = sk->joint(i);
     bind_bone_.assign(verts_.size(), 0);
+    bind_bone2_.assign(verts_.size(), -1);
+    bind_wt_.assign(verts_.size(), 255);
     for (size_t i = 0; i < verts_.size(); i++) {
-        double best = 0.0; int bi = 0; bool first = true;
+        double best = 0.0, second = 0.0; int bi = 0, bj = -1; bool first = true;
         for (int j = 0; j < (int)joints.size(); j++) {
             double d = (verts_[i].pos - joints[j]).length();
-            if (first || d < best) { best = d; bi = j; first = false; }
+            if (first || d < best) {
+                if (!first) { second = best; bj = bi; }
+                best = d; bi = j; first = false;
+            } else if (bj < 0 || d < second) {
+                second = d; bj = j;
+            }
         }
         bind_bone_[i] = bi;
+        if (bj >= 0 && second > 1e-12) {
+            // inverse-distance blend of the two nearest joints softens
+            // the crease: w0 = (1/d0)/(1/d0 + 1/d1) = d1/(d0+d1)
+            double w0 = second / (best + second);
+            bind_bone2_[i] = bj;
+            bind_wt_[i] = (unsigned char)(w0 * 255.0 + 0.5);
+        }
     }
 }
 
@@ -384,7 +398,19 @@ void SculptMesh::apply_bones() {
         int bi = bind_bone_[i];
         Vec3 loc = bind_verts_[i].pos - Jb[(size_t)bi];
         Vec3 offb = anim_mat_mul((const double(*)[3])&R[(size_t)bi * 9], loc);
-        verts_[i].pos = wt[(size_t)bi] + offb;
+        Vec3 np = wt[(size_t)bi] + offb;
+        // two-joint blend: soften creases where fold regions meet
+        int bj = bind_bone2_[i];
+        if (bj >= 0 && bj != bi) {
+            unsigned char wq = bind_wt_[i];
+            if (wq < 255) {
+                Vec3 loc2 = bind_verts_[i].pos - Jb[(size_t)bj];
+                Vec3 off2 = anim_mat_mul((const double(*)[3])&R[(size_t)bj * 9], loc2);
+                Vec3 np2 = wt[(size_t)bj] + off2;
+                np = np + (np2 - np) * (1.0 - (double)wq / 255.0);
+            }
+        }
+        verts_[i].pos = np;
     }
     rebuild_normals();
     if (bvh_dirty_) {
@@ -403,6 +429,10 @@ void SculptMesh::remap_bone_binds(int removed, int replacement) {
         else if (e > removed) e--;
     };
     for (auto& e : bind_bone_) fix(e);
+    for (auto& e : bind_bone2_) {
+        if (e == removed) { e = -1; }  // dropped secondary: single-joint skin
+        else if (e > removed) e--;
+    }
 }
 
 Vec3 SculptMesh::bone_anchor() const {
@@ -440,4 +470,20 @@ void SculptMesh::reset_bones() {
         rebuild_bvh();
         bvh_dirty_ = false;
     }
+}
+
+int SculptMesh::bone_bound_count(int bone) const {
+    int n = 0;
+    for (size_t i = 0; i < bind_bone_.size(); i++)
+        if (bind_bone_[i] == bone) n++;
+    return n;
+}
+
+bool SculptMesh::bone_bound_vert(int bone, int idx, Vec3& out) const {
+    int seen = 0;
+    for (size_t i = 0; i < bind_bone_.size(); i++) {
+        if (bind_bone_[i] != bone) continue;
+        if (seen++ == idx) { out = verts_[i].pos; return true; }
+    }
+    return false;
 }

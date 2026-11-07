@@ -24,6 +24,15 @@ struct RenderMode {
 extern const RenderMode MODES[];
 inline int mode_count() { return 6; }
 
+// MODES index (and .r3do value) of the bones overlay mode.
+inline constexpr int MODE_BONES = 5;
+
+// Selection hook for overlay renderers: UI writes these whenever the sidebar
+// picks a bone, so modes/bones.cpp can highlight the joint and tint the verts
+// bound to it. Not part of saved scenes; reset selection = null/-1.
+extern Hittable* g_sel_object;
+extern int g_sel_bone;
+
 // non-[fn]-table mode function defined in static.cpp
 void static_mode(Grid& grid, Camera& cam, DisplayWin& display,
                  const Vec3& light_dir, int samples);

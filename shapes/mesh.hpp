@@ -41,6 +41,8 @@ public:
     double bone_span() const override;
     Vec3 bone_anchor() const override;
     void remap_bone_binds(int removed, int replacement) override;
+    int bone_bound_count(int bone) const override;
+    bool bone_bound_vert(int bone, int idx, Vec3& out) const override;
 
     struct FlatNode {
         float bmin[3], bmax[3];
@@ -54,10 +56,12 @@ private:
     std::vector<FlatNode> nodes_;
 
     // bind pose snapshot (filled by bind_skeleton): triangle copy plus the
-    // three joint bindings per corner
+    // joint bindings per corner — skinning blends primary + secondary joint
     struct Bind {
         std::vector<Triangle> tris;
-        std::vector<int> bone;    // 3 entries per triangle
+        std::vector<int> bone;          // primary joint per corner (3 / tri)
+        std::vector<int> bone2;         // secondary joint, -1 = single
+        std::vector<unsigned char> wt;  // weight of the primary joint *255
     };
     std::unique_ptr<Bind> bind_;
     bool bvh_dirty_ = false;

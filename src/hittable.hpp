@@ -99,6 +99,27 @@ public:
     virtual void remap_bone_binds(int removed, int replacement) {
         (void)removed; (void)replacement;
     }
+    // bound-vert feedback for the bones overlay: how triangle corners / verts
+    // are attached to a bone, asking for the k-th one's current position
+    virtual int bone_bound_count(int bone) const {
+        (void)bone; return 0;
+    }
+    virtual bool bone_bound_vert(int bone, int idx, Vec3& out) const {
+        (void)bone; (void)idx; (void)out; return false;
+    }
+    // true when any bone carries a live pose (off != 0 or rot != identity)
+    bool bones_posed() const {
+        if (!skeleton_) return false;
+        for (const auto& b : skeleton_->bones) {
+            if (b.off.length() > 1e-9) return true;
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 3; c++) {
+                    double want = r == c ? 1.0 : 0.0;
+                    if (std::abs(b.m[r][c] - want) > 1e-9) return true;
+                }
+        }
+        return false;
+    }
     bool is_visible() const { return visible_; }
     void set_visible(bool v) { visible_ = v; }
 

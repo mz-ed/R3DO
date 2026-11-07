@@ -53,23 +53,49 @@ void render_bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
 
 
         // links
+        bool has_sel = (g_sel_object == obj) && g_sel_bone >= 0 &&
+                       g_sel_bone < (int)sk->bones.size();
         for (int bi = 0; bi < (int)sk->bones.size(); bi++) {
             const auto& b = sk->bones[(size_t)bi];
             int ax, ay, bx, by;
             if (!project(joints[(size_t)bi], ax, ay)) continue;
+            bool is_sel = has_sel && g_sel_bone == bi;
             if (b.parent >= 0) {
                 const Vec3& jpp = joints[(size_t)b.parent];
-                if (project(jpp, bx, by))
-                    display.draw_line(ax, ay, bx, by, 0x34d2eb);   // bright link
+                if (project(jpp, bx, by)) {
+                    display.draw_line(ax, ay, bx, by,
+                                      is_sel ? 0xffd23f : 0x34d2eb);
+                    if (is_sel) { // thicker pick line
+                        display.draw_line(ax + 1, ay, bx + 1, by, 0xffd23f);
+                        display.draw_line(ax, ay + 1, bx, by + 1, 0xffd23f);
+                    }
+                }
             }
-            // joint dot
-            int d = 3;
+            // joint dot: 5px normally, ringed when selected (drag target)
+            int d = is_sel ? 7 : 5;
+            if (is_sel) display.fill_rect(ax - d / 2 - 1, ay - d / 2 - 1,
+                                          d + 2, d + 2, 0xffffff);
             display.fill_rect(ax - d / 2, ay - d / 2, d, d,
-                              b.parent >= 0 ? 0x34d2eb : 0xffd23f);
+                              is_sel || b.parent >= 0 ? 0x34d2eb : 0xffd23f);
             // tiny name tag
             char tag[72];
             snprintf(tag, sizeof(tag), "%d:%s", bi, b.name.c_str());
-            display.draw_text(ax + 5, ay - 5, tag, 0xbfeef7);
+            display.draw_text(ax + 7, ay - 6, tag,
+                              is_sel ? 0xffd23f : 0xbfeef7);
+        }
+
+        // bound-vert tint: verts / triangle corners attached to the selected
+        // bone, drawn as tiny dots so the rig region is visible
+        if (has_sel) {
+            int n = obj->bone_bound_count(g_sel_bone);
+            if (n > 4000) n = 4000;
+            for (int vi = 0; vi < n; vi++) {
+                Vec3 pv;
+                if (!obj->bone_bound_vert(g_sel_bone, vi, pv)) break;
+                int px, py;
+                if (!project(pv, px, py)) continue;
+                display.fill_rect(px, py, 2, 2, 0xff8a3c);
+            }
         }
     }
 }
