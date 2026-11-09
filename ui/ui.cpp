@@ -554,7 +554,8 @@ void UI::bone_drag_update(int mx, int my) {
     Skeleton::Bone& b = sk->bones[(size_t)bi];
     if (bone_drag_pose_) {
         b.off = b.off + delta;
-        obj->apply_bones(); // preview bends under the cursor
+        sk->touch_pose();             // version so idle renders follow too
+        obj->apply_bones();           // preview bends under the cursor
     } else {
         b.offset = b.offset + delta; // rest-pose rig edit (bind space)
     }
@@ -654,9 +655,10 @@ bool UI::rehome_free(int sel, int i, int j, int k) {
 }
 
 bool UI::start_drag(int mx, int my) {
-    // Bones mode: the mouse may be on a joint — those belong to the bone
-    // gizmo, not the object-drag gizmo.
-    if (render_mode() == MODE_BONES && start_bone_drag(mx, my)) return true;
+    // Bones modes (billboard + raytrace variants): the mouse may be on a
+    // joint — those belong to the bone gizmo, not the object-drag gizmo.
+    if ((render_mode() == MODE_BONES || render_mode() == MODE_BONES_RAYTRACE) &&
+        start_bone_drag(mx, my)) return true;
     HitRecord rec;
     if (!pick_at_mouse(grid, cam, display.width(), display.height(), mx, my, rec))
         return false;

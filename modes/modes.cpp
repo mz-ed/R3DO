@@ -29,6 +29,11 @@ static void bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
     render_bones_mode(grid, cam, display, light_dir, samples);
 }
 
+static void bones_raytrace_mode(Grid& grid, Camera& cam, DisplayWin& display,
+                                const Vec3& light_dir, int samples) {
+    render_bones_raytrace_mode(grid, cam, display, light_dir, samples);
+}
+
 static void overhead_mode(Grid& grid, Camera& cam, DisplayWin& display,
                           const Vec3& light_dir, int) {
     (void)light_dir; // top-down marker view; no lighting
@@ -43,6 +48,7 @@ const RenderMode MODES[] = {
     { "Sculpt",    sculpt_mode,     true  },
     { "Static",    static_mode,     false },
     { "Bones",     bones_mode,      false },
+    { "Bones RT",  bones_raytrace_mode, false }, // appended: saves stay valid
 };
 
 // overlay selection hook (see render_modes.hpp): written by the UI when the

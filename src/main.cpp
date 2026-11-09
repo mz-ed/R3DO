@@ -343,6 +343,15 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             render_and_ui();
         }
 
+        // Bone pose changes from any source (pose sliders, pose-drag, clips,
+        // future editors) propagate to bound geometry here; a change forces
+        // one render even when the app would otherwise idle, which keeps
+        // Raytrace/Sculpt views live with the skeleton.
+        bool bones_changed = false;
+        for (auto& o : grid.free_objects())
+            if (o) bones_changed |= o->ensure_bones_applied();
+        if (bones_changed) render_and_ui();
+
         // Panel clicks are deferred and drawn at most once per iteration so a
         // batched press+release cannot fire the same button twice.
         bool ui_click_pending = false;

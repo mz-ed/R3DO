@@ -87,11 +87,24 @@ public:
         Skeleton::Bone& b = skeleton_->bones[(size_t)bone];
         b.off = off;
         anim_euler_matrix(rot, b.m, bone_tmp_mtx_);
+        skeleton_->touch_pose();
     }
     virtual void apply_bones() {}
     virtual void reset_bones() {
         if (!skeleton_) return;
         for (auto& b : skeleton_->bones) b.clear_pose();
+        skeleton_->touch_pose();
+    }
+    // Pose versioning: any pose write bumps Skeleton::pose_version; bound
+    // geometry refreshes once per change via ensure_bones_applied() so pose
+    // changes from sliders / pose drags / clips / future sources all reach
+    // the render the same way. Returns true when an apply actually ran.
+    int bones_applied_ = 0;
+    bool ensure_bones_applied() {
+        if (!skeleton_ || skeleton_->pose_version == bones_applied_) return false;
+        bones_applied_ = skeleton_->pose_version;
+        apply_bones();
+        return true;
     }
     // vertical extent of the object's geometry, for auto bone placement
     virtual double bone_span() const { return 1.0; }
@@ -109,16 +122,7 @@ public:
     }
     // true when any bone carries a live pose (off != 0 or rot != identity)
     bool bones_posed() const {
-        if (!skeleton_) return false;
-        for (const auto& b : skeleton_->bones) {
-            if (b.off.length() > 1e-9) return true;
-            for (int r = 0; r < 3; r++)
-                for (int c = 0; c < 3; c++) {
-                    double want = r == c ? 1.0 : 0.0;
-                    if (std::abs(b.m[r][c] - want) > 1e-9) return true;
-                }
-        }
-        return false;
+        return skeleton_ && skeleton_->bones_posed();
     }
     bool is_visible() const { return visible_; }
     void set_visible(bool v) { visible_ = v; }

@@ -4,10 +4,12 @@
 #include "v3.hpp"
 #include <vector>
 
-// Bones mode: standard billboard view with every skeleton overlaid — joints
-// drawn as dots, links as lines, selected bone highlighted, joint names as
-// tiny labels near the joints. Gizmo/selection keep working (strokes disabled),
-// so bones can be picked in the OBJECTS dropdown while editing the chain.
+// Bones modes: every skeleton is overlaid — joints drawn as dots, links as
+// lines, selected bone highlighted, joint names as tiny labels near the
+// joints, plus the bound-vert tint. The original Bones mode renders the
+// scene like Billboard; the Bones RT mode renders it with the raytracer.
+// Gizmo/selection keep working in both (strokes disabled), so joints can be
+// grabbed with the gizmo while the chain is inspected.
 
 struct BoneOverlay {
     Vec3 from;                       // parent joint (or child itself for root)
@@ -16,11 +18,18 @@ struct BoneOverlay {
     int depth;
 };
 
-void render_bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
-                       const Vec3& light_dir, int samples) {
-    render_billboard(grid, cam, display, light_dir);
-    (void)samples;
+static void bones_overlay_dot(DisplayWin& display, int ax, int ay,
+                              int bi, bool is_sel, bool root) {
+    (void)bi;
+    // joint dot: 5px normally, ringed when selected (drag target)
+    int d = is_sel ? 7 : 5;
+    if (is_sel) display.fill_rect(ax - d / 2 - 1, ay - d / 2 - 1,
+                                  d + 2, d + 2, 0xffffff);
+    display.fill_rect(ax - d / 2, ay - d / 2, d, d,
+                      is_sel || !root ? 0x34d2eb : 0xffd23f);
+}
 
+void draw_bones_overlay(Grid& grid, Camera& cam, DisplayWin& display) {
     int w = display.width(), h = display.height();
     double vw = VIEWPORT_HEIGHT * w / h;
 
@@ -48,9 +57,8 @@ void render_bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
         // live world geometry: bind verts follow drag (translate), pose keys
         // are applied per-frame by the animator, so re-project from the head.
         std::vector<Vec3> joints((size_t)sk->bones.size());
-        for (int bi = 0; bi < (int)sk->bones.size(); bi++) joints[(size_t)bi] = sk->joint(bi);
-
-
+        for (int bi = 0; bi < (int)sk->bones.size(); bi++)
+            joints[(size_t)bi] = sk->joint(bi);
 
         // links
         bool has_sel = (g_sel_object == obj) && g_sel_bone >= 0 &&
@@ -71,12 +79,7 @@ void render_bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
                     }
                 }
             }
-            // joint dot: 5px normally, ringed when selected (drag target)
-            int d = is_sel ? 7 : 5;
-            if (is_sel) display.fill_rect(ax - d / 2 - 1, ay - d / 2 - 1,
-                                          d + 2, d + 2, 0xffffff);
-            display.fill_rect(ax - d / 2, ay - d / 2, d, d,
-                              is_sel || b.parent >= 0 ? 0x34d2eb : 0xffd23f);
+            bones_overlay_dot(display, ax, ay, bi, is_sel, b.parent < 0);
             // tiny name tag
             char tag[72];
             snprintf(tag, sizeof(tag), "%d:%s", bi, b.name.c_str());
@@ -98,4 +101,20 @@ void render_bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
             }
         }
     }
+}
+
+void render_bones_mode(Grid& grid, Camera& cam, DisplayWin& display,
+                       const Vec3& light_dir, int samples) {
+    render_billboard(grid, cam, display, light_dir);
+    (void)samples;
+    draw_bones_overlay(grid, cam, display);
+}
+
+void render_bones_raytrace_mode(Grid& grid, Camera& cam, DisplayWin& display,
+                                const Vec3& light_dir, int samples) {
+    // full raytraced frame (same path as Raytrace mode) with the overlay
+    // drawn on top, so bones are visible where the real render happens
+    render_scene(grid, cam, display, display.width(), display.height(),
+                 samples, light_dir);
+    draw_bones_overlay(grid, cam, display);
 }

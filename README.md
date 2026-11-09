@@ -56,6 +56,16 @@ them with keyframes or procedural modifiers, and drag objects directly in the vi
   re-binds every vertex to the current joints. Bones follow drags: bind
   vertices and stored joint offsets translate with the object.
 
+- **Sculpt + skeleton interplay** — the bind snapshot refreshes after every
+  brush stroke, undo and redo, so geometry sculpted after Add Skeleton is
+  kept when a pose is applied instead of snapping back to the bind-time
+  shape; when the chain is at rest the verts also re-pick joints, so a bulge
+  crossing a bone boundary re-attaches to the closer joint automatically.
+  Sculpting while a pose is active keeps the edit in bind space (assignments
+  unchanged), so posing stays live during strokes. Any pose change (sliders,
+  pose drags, clip playback) re-applies the skeleton and re-renders every
+  affected view, including idle Raytrace/Sculpt frames.
+
 - **Bone gizmo (Bones mode)** — in the Bones render mode, press on a joint dot
   to grab that bone (the sidebar follows the pick); drag moves the joint and
   everything hanging under it. If the chain is at rest, the drag edits the
@@ -77,9 +87,15 @@ them with keyframes or procedural modifiers, and drag objects directly in the vi
   their own object's geometry; cross-object parenting (a limb object hanging
   off another object's bone) is not supported.
 
-- **Bones render mode** — cycle with `B`: renders the scene like Billboard and
-  overlays every skeleton (joints as dots, links as lines, joint names tagged).
-  Gizmo/selection still work, so you can pick objects while inspecting chains.
+- **Bones render modes** — cycle with `B`:
+  - **Bones** — renders the scene like Billboard and overlays every skeleton
+    (joints as dots, links as lines, joint names tagged). Fast; the original
+    bones editor view.
+  - **Bones RT** — full raytraced frame with the same skeleton overlay drawn
+    on top, so the rig is visible (and its joints grabbable with the gizmo)
+    in the real render. Both modes also tint the verts bound to the selected
+    bone; gizmo/selection still work, so chains can be inspected while
+    editing in raytrace.
 
 - **Heightmap terrain** — drop grayscale PNGs into `maps/`, then **Import HMap**
   in the sidebar (the modal lists every PNG; pixel luminance becomes height on a

@@ -69,6 +69,9 @@ public:
     void set_bone_pose(int bone, const Vec3& rot, const Vec3& off) override;
     void apply_bones() override;
     void reset_bones() override;
+    // re-syncs the bind snapshot after brush strokes / undo / redo so the
+    // sculpted geometry survives pose applies (see refresh_bind_verts)
+    void refresh_bind_verts();
     double bone_span() const override;
     Vec3 bone_anchor() const override;
     void remap_bone_binds(int removed, int replacement) override;

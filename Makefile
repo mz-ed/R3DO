@@ -8,7 +8,7 @@ LDFLAGS   = -lX11 -lXext -lpthread
 INC       = -I. -Isrc -Ianim -Ishapes -Imodes -Iui -Isculpt
 
 SRCS = src/main.cpp src/display.cpp src/render.cpp src/saver.cpp src/settings.cpp \
-       anim/animation.cpp \
+       anim/animation.cpp anim/skeleton.cpp \
        shapes/mesh.cpp shapes/obj_loader.cpp shapes/heightfield.cpp \
        sculpt/sculpt_mesh.cpp sculpt/sculpt_engine.cpp sculpt/sculpt_io.cpp sculpt/sculpt_ui.cpp \
        ui/ui.cpp ui/nkui_core.cpp ui/nkui_sidebar.cpp ui/nkui_anim.cpp ui/startscreen.cpp \

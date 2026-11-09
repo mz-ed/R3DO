@@ -261,6 +261,8 @@ void SculptEngine::stroke_update(const Camera& cam, int img_w, int img_h, double
     if (changed) {
         active_->rebuild_normals();
         active_->rebuild_bvh();
+        // geometric state changed: keep the skin bind in step with sculpting
+        active_->refresh_bind_verts();
     }
 }
 
@@ -290,6 +292,7 @@ void SculptEngine::undo() {
     history_cursor_--;
     active_->rebuild_normals();
     active_->rebuild_bvh();
+    active_->refresh_bind_verts();
 }
 
 void SculptEngine::redo() {
@@ -300,6 +303,7 @@ void SculptEngine::redo() {
     history_cursor_++;
     active_->rebuild_normals();
     active_->rebuild_bvh();
+    active_->refresh_bind_verts();
 }
 
 void SculptEngine::clear_history() {

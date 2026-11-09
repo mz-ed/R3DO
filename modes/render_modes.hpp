@@ -22,10 +22,13 @@ struct RenderMode {
 };
 
 extern const RenderMode MODES[];
-inline int mode_count() { return 6; }
+inline int mode_count() { return 7; }
 
-// MODES index (and .r3do value) of the bones overlay mode.
+// MODES index (and .r3do value) of the bones overlay modes. The original
+// Bones mode is billboard-based; Bones RT (appended later) raytraces the
+// scene under the same overlay. Both share the joint gizmo.
 inline constexpr int MODE_BONES = 5;
+inline constexpr int MODE_BONES_RAYTRACE = 6;
 
 // Selection hook for overlay renderers: UI writes these whenever the sidebar
 // picks a bone, so modes/bones.cpp can highlight the joint and tint the verts

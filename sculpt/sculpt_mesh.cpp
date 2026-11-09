@@ -355,6 +355,66 @@ void SculptMesh::bind_skeleton(Skeleton* sk) {
             bind_wt_[i] = (unsigned char)(w0 * 255.0 + 0.5);
         }
     }
+    bones_applied_ = skeleton_->pose_version; // bind pose == current pose
+}
+
+// Keep the bind snapshot in step with sculpting: without this, every pose
+// apply (slider / pose drag / clip) would re-derive verts from the bind-time
+// snapshot and erase anything sculpted after Add Skeleton / Re-link.
+//  - chain at rest: fresh snapshot + nearest-joint re-pick (a bulge crossing
+//    a bone boundary re-attaches to the closer joint automatically)
+//  - pose active: keep assignments, invert the primary bone's transform per
+//    vert so the sculpt lives in bind space and posing keeps working
+void SculptMesh::refresh_bind_verts() {
+    if (!skeleton_ || skeleton_->bones.empty()) return;
+    if (verts_.empty() || bind_verts_.size() != verts_.size()) return;
+
+    if (!skeleton_->bones_posed()) {
+        bind_verts_ = verts_;
+        std::vector<Vec3> joints;
+        bone_rest_joints(*skeleton_, joints);
+        for (size_t i = 0; i < verts_.size(); i++) {
+            double best = 0.0, second = 0.0;
+            int bi = 0, bj = -1; bool first = true;
+            for (int j = 0; j < (int)joints.size(); j++) {
+                double d = (verts_[i].pos - joints[j]).length();
+                if (first || d < best) {
+                    if (!first) { second = best; bj = bi; }
+                    best = d; bi = j; first = false;
+                } else if (bj < 0 || d < second) {
+                    second = d; bj = j;
+                }
+            }
+            bind_bone_[i] = bi;
+            if (bj >= 0 && second > 1e-12) {
+                bind_bone2_[i] = bj;
+                bind_wt_[i] = (unsigned char)(second / (best + second) * 255.0 + 0.5);
+            } else {
+                bind_bone2_[i] = -1;
+                bind_wt_[i] = 255;
+            }
+        }
+        return;
+    }
+
+    // posed: exact inverse through the primary bone per vert (blended verts
+    // recover approximately through their dominant joint)
+    int nb = (int)skeleton_->bones.size();
+    std::vector<Vec3> wt((size_t)nb);
+    std::vector<double> R((size_t)nb * 9);
+    bone_chain_transforms(*skeleton_, wt, R);
+    std::vector<Vec3> Jb((size_t)nb);
+    bone_rest_joints(*skeleton_, Jb);
+    for (size_t i = 0; i < verts_.size(); i++) {
+        int bi = bind_bone_[i];
+        const double* M = &R[(size_t)bi * 9];
+        double Mt[9];
+        for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 3; c++) Mt[r * 3 + c] = M[c * 3 + r];
+        Vec3 rel = verts_[i].pos - wt[(size_t)bi];
+        bind_verts_[i].pos = Jb[(size_t)bi] +
+            anim_mat_mul((const double(*)[3])Mt, rel);
+    }
 }
 
 void SculptMesh::set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
@@ -363,36 +423,18 @@ void SculptMesh::set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
     b.off = off;
     double mt[3][3];
     anim_euler_matrix(rot, b.m, mt);
+    skeleton_->touch_pose();
     bvh_dirty_ = true;
 }
 
 void SculptMesh::apply_bones() {
     if (!skeleton_ || bind_bone_.empty() || bind_verts_.empty()) return;
-    const auto& bones = skeleton_->bones;
-    int nb = (int)bones.size();
+    int nb = (int)skeleton_->bones.size();
     std::vector<Vec3> wt((size_t)nb);
     std::vector<double> R((size_t)nb * 9);
-    for (int i = 0; i < nb; i++) {
-        const Skeleton::Bone& b = bones[(size_t)i];
-        if (b.parent >= 0) {
-            for (int r = 0; r < 3; r++)
-                for (int c = 0; c < 3; c++) {
-                    double s = 0.0;
-                    for (int k = 0; k < 3; k++)
-                        s += R[(size_t)b.parent * 9 + r * 3 + k] * b.m[k][c];
-                    R[(size_t)i * 9 + r * 3 + c] = s;
-                }
-            Vec3 op   = wt[(size_t)b.parent];
-            Vec3 offb = anim_mat_mul((const double(*)[3])&R[(size_t)b.parent * 9], b.offset + b.off);
-            wt[(size_t)i] = op + offb;
-        } else {
-            for (int r = 0; r < 3; r++)
-                for (int c = 0; c < 3; c++) R[(size_t)i * 9 + r * 3 + c] = b.m[r][c];
-            wt[(size_t)i] = b.offset + b.off;
-        }
-    }
+    bone_chain_transforms(*skeleton_, wt, R);
     std::vector<Vec3> Jb((size_t)nb);
-    for (int i = 0; i < nb; i++) Jb[(size_t)i] = skeleton_->joint(i);
+    bone_rest_joints(*skeleton_, Jb);
 
     for (size_t i = 0; i < verts_.size(); i++) {
         int bi = bind_bone_[i];
@@ -462,7 +504,10 @@ double SculptMesh::bone_span() const {
 }
 
 void SculptMesh::reset_bones() {
-    if (skeleton_) for (auto& b : skeleton_->bones) b.clear_pose();
+    if (skeleton_) {
+        for (auto& b : skeleton_->bones) b.clear_pose();
+        skeleton_->touch_pose();
+    }
     if (!bind_verts_.empty()) {
         verts_ = bind_verts_;
         rebuild_normals();

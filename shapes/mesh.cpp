@@ -517,6 +517,7 @@ void Mesh::bind_skeleton(Skeleton* sk) {
             }
         }
     }
+    bones_applied_ = skeleton_->pose_version; // bind pose == current pose
 }
 
 void Mesh::set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
@@ -525,37 +526,20 @@ void Mesh::set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
     b.off = off;
     double mt[3][3];
     anim_euler_matrix(rot, b.m, mt);
+    skeleton_->touch_pose();
     bvh_dirty_ = true;
 }
 
 void Mesh::apply_bones() {
     if (!skeleton_ || !bind_ || bind_->bone.empty()) return;
-    const auto& bones = skeleton_->bones;
-    int nb = (int)bones.size();
-    // per-frame chain transforms (parents-first)
+    int nb = (int)skeleton_->bones.size();
+    // per-frame chain transforms (shared composition lives in anim/skeleton)
     std::vector<Vec3> wt((size_t)nb);
     std::vector<double> R((size_t)nb * 9);
-    for (int i = 0; i < nb; i++) {
-        const Skeleton::Bone& b = bones[(size_t)i];
-        if (b.parent >= 0) {
-            const double* P = &R[(size_t)b.parent * 9];
-            for (int r = 0; r < 3; r++)
-                for (int c = 0; c < 3; c++) {
-                    double s = 0.0;
-                    for (int k = 0; k < 3; k++) s += P[r * 3 + k] * b.m[k][c];
-                    R[(size_t)i * 9 + r * 3 + c] = s;
-                }
-            Vec3 op = wt[(size_t)b.parent];
-            Vec3 offb = anim_mat_mul((const double(*)[3])&R[(size_t)b.parent * 9], b.offset + b.off);
-            wt[(size_t)i] = op + offb;
-        } else {
-            for (int r = 0; r < 3; r++)
-                for (int c = 0; c < 3; c++) R[(size_t)i * 9 + r * 3 + c] = b.m[r][c];
-            wt[(size_t)i] = b.offset + b.off;
-        }
-    }
+    bone_chain_transforms(*skeleton_, wt, R);
+
     std::vector<Vec3> Jb((size_t)nb);
-    for (int i = 0; i < nb; i++) Jb[(size_t)i] = skeleton_->joint(i);
+    bone_rest_joints(*skeleton_, Jb);
 
     for (size_t f = 0; f < bind_->tris.size(); f++) {
         const Triangle& bt = bind_->tris[f];
@@ -637,6 +621,7 @@ double Mesh::bone_span() const {
 
 void Mesh::reset_bones() {
     if (skeleton_) for (auto& b : skeleton_->bones) b.clear_pose();
+    if (skeleton_) skeleton_->touch_pose();
     if (bind_) {
         triangles_ = bind_->tris;
         rebuild_bvh();
