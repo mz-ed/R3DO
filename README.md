@@ -97,6 +97,12 @@ them with keyframes or procedural modifiers, and drag objects directly in the vi
     bone; gizmo/selection still work, so chains can be inspected while
     editing in raytrace.
 
+![Bones mode: billboard view with joints, tags and the bound-vert tint of the
+selected spine, plus pose sliders in the sidebar](docs/img/editor-bones.png)
+
+![Bones RT mode: full raytraced scene with the same overlay; the spine pose
+sliders bend the cap live in the raytraced frame](docs/img/editor-bones-rt.png)
+
 - **Heightmap terrain** — drop grayscale PNGs into `maps/`, then **Import HMap**
   in the sidebar (the modal lists every PNG; pixel luminance becomes height on a
   0-3 world-unit ramp sized to the grid). The terrain renders in **Overhead**
