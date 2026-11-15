@@ -152,6 +152,33 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
             // ---- relink row ----
             nk_layout_row_dynamic(ctx_, 24, 1);
             if (nk_button_label(ctx_, "Re-link verts")) ui.relink_selected_bones();
+            // ---- joint-drag mode: what grabbing a dot does ----
+            nk_layout_row_dynamic(ctx_, 16, 3);
+            nk_label(ctx_, "drag mode", NK_TEXT_LEFT);
+            nk_layout_row_dynamic(ctx_, 24, 3);
+            {
+                static const char* mlabels[3] = { "STRUCT", "POSE", "BEND" };
+                for (int m = 0; m < 3; m++) {
+                    char lb[16];
+                    snprintf(lb, sizeof(lb), "%s%s",
+                             m == ui.bone_drag_mode() ? "* " : "   ", mlabels[m]);
+                    if (nk_button_label(ctx_, lb)) ui.set_bone_drag_mode(m);
+                }
+            }
+            // ---- stretch behavior: cap before tearing, or subdivide ----
+            nk_layout_row_dynamic(ctx_, 16, 2);
+            nk_label(ctx_, "stretch", NK_TEXT_LEFT);
+            nk_label(ctx_, "", NK_TEXT_LEFT);
+            nk_layout_row_dynamic(ctx_, 24, 2);
+            {
+                static const char* slabels[2] = { "LIMIT", "REMESH" };
+                for (int m = 0; m < 2; m++) {
+                    char lb[16];
+                    snprintf(lb, sizeof(lb), "%s%s",
+                             m == ui.stretch_mode() ? "* " : "   ", slabels[m]);
+                    if (nk_button_label(ctx_, lb)) ui.set_stretch_mode(m);
+                }
+            }
             // ---- pose sliders (per-bone live preview) ----
             nk_layout_row_dynamic(ctx_, 16, 3);
             nk_label(ctx_, "roll", NK_TEXT_LEFT);
@@ -165,12 +192,32 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
             float vp = ui.pose_pitch();
             if (nk_slider_float(ctx_, -180.0f, &vp, 180.0f, 0.5f)) ui.set_pose_pitch(vp);
             ui.pose_slider_tick(); // applies only when a value changed
+            // ---- influence area (per-bone falloff radius + sharpness) ----
+            nk_layout_row_dynamic(ctx_, 16, 2);
+            nk_label(ctx_, "influence", NK_TEXT_LEFT);
+            nk_label(ctx_, "sharp", NK_TEXT_LEFT);
+            nk_layout_row_dynamic(ctx_, 18, 2);
+            float inf = ui.bone_influence();
+            if (nk_slider_float(ctx_, 0.0f, &inf, 4.0f, 0.05f))
+                ui.set_bone_influence(inf);
+            float shp = ui.bone_sharp();
+            if (nk_slider_float(ctx_, 0.5f, &shp, 8.0f, 0.25f))
+                ui.set_bone_sharp(shp);
+            nk_layout_row_dynamic(ctx_, 16, 1);
+            nk_label(ctx_, "0 = unlimited reach", NK_TEXT_LEFT);
             nk_layout_row_dynamic(ctx_, 24, 1);
             if (nk_button_label(ctx_, "Straighten")) ui.pose_straighten();
+            nk_layout_row_dynamic(ctx_, 24, 2);
+            if (nk_button_label(ctx_, "KEY POSE"))
+                ui.key_bone_pose_to_clip(sel_interp_);
+            nk_label(ctx_, "keys pose to clip", NK_TEXT_LEFT);
             nk_layout_row_dynamic(ctx_, 16, 1);
             nk_label(ctx_, "+ Bone parents to selection", NK_TEXT_LEFT);
             nk_label(ctx_, "Re-link: bind verts to joints", NK_TEXT_LEFT);
-            nk_label(ctx_, "Bones view: drag joints (B)", NK_TEXT_LEFT);
+            nk_label(ctx_, "STRUCT: rig edit / POSE: verts follow", NK_TEXT_LEFT);
+            nk_label(ctx_, "BEND: drag rotates the bone", NK_TEXT_LEFT);
+            nk_label(ctx_, "stretch LIMIT: stops before tearing", NK_TEXT_LEFT);
+            nk_label(ctx_, "stretch REMESH: new polys as it grows", NK_TEXT_LEFT);
         } else if (ui.selected_object() >= 0) {
             nk_layout_row_dynamic(ctx_, 16, 1);
             nk_label(ctx_, "no skeleton on this object", NK_TEXT_LEFT);

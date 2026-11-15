@@ -32,6 +32,7 @@ public:
     std::vector<Triangle>& get_triangles() { return triangles_; }
     const std::vector<Triangle>& get_triangles() const { return triangles_; }
     void rebuild_bvh();
+    void refresh_bvh_bounds();
 
     // ---- skeleton support ----
     void bind_skeleton(Skeleton* sk) override;
@@ -43,6 +44,7 @@ public:
     void remap_bone_binds(int removed, int replacement) override;
     int bone_bound_count(int bone) const override;
     bool bone_bound_vert(int bone, int idx, Vec3& out) const override;
+    double stretch_cap() const override { return stretch_cap_; }
 
     struct FlatNode {
         float bmin[3], bmax[3];
@@ -66,6 +68,7 @@ private:
     std::unique_ptr<Bind> bind_;
     bool bvh_dirty_ = false;
     double last_bvh_rebuild_ = 0.0;
+    double stretch_cap_ = 0.0;
 
     // SoA float data for SSE intersection
     // Layout per packet of 4 triangles (36 floats):

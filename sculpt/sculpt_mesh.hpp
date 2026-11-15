@@ -55,6 +55,7 @@ public:
     void rebuild_topology(bool recompute_adjacency = true);
     void remesh_subdivide();
     void rebuild_bvh();
+    void refresh_bvh_bounds();
 
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override;
     bool export_obj(const std::string& filename) const;
@@ -72,6 +73,8 @@ public:
     // re-syncs the bind snapshot after brush strokes / undo / redo so the
     // sculpted geometry survives pose applies (see refresh_bind_verts)
     void refresh_bind_verts();
+    double stretch_cap() const override;
+    bool remesh_if_stretched(double max_ratio, size_t max_tris);
     double bone_span() const override;
     Vec3 bone_anchor() const override;
     void remap_bone_binds(int removed, int replacement) override;
@@ -95,6 +98,7 @@ private:
     std::vector<unsigned char> bind_wt_;
     bool bvh_dirty_ = false;
     double last_bvh_rebuild_ = 0.0;
+    double stretch_cap_ = 0.0;
     Vec3 color_;
     std::string path_;
 };

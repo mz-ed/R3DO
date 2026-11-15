@@ -198,6 +198,30 @@ void SculptMesh::rebuild_bvh() {
     if (!bnodes_.empty()) flat(0);
 }
 
+void SculptMesh::refresh_bvh_bounds() {
+    if (fn2_.empty() || faces_.empty()) return;
+    for (int i = (int)fn2_.size() - 1; i >= 0; i--) {
+        FN2& n = fn2_[(size_t)i];
+        if (n.leaf) {
+            for (int a = 0; a < 3; a++) { n.bmin[a] = 1e30f; n.bmax[a] = -1e30f; }
+            for (int k = 0; k < n.count; k++) {
+                int t = tri_list_[(size_t)n.start + (size_t)k];
+                const auto& f = faces_[(size_t)t];
+                fe(n.bmin, n.bmax, verts_[(size_t)f.v0].pos);
+                fe(n.bmin, n.bmax, verts_[(size_t)f.v1].pos);
+                fe(n.bmin, n.bmax, verts_[(size_t)f.v2].pos);
+            }
+        } else {
+            const FN2& L = fn2_[(size_t)n.leftFirst];
+            const FN2& R = fn2_[(size_t)n.rightFirst];
+            for (int a = 0; a < 3; a++) {
+                n.bmin[a] = std::min(L.bmin[a], R.bmin[a]);
+                n.bmax[a] = std::max(L.bmax[a], R.bmax[a]);
+            }
+        }
+    }
+}
+
 bool SculptMesh::hit(const Ray& r_in,double t_min,double t_max,HitRecord& rec) const {
     bool xf = anim_xform_active();
     Vec3 pivot;
@@ -324,6 +348,22 @@ static double sculpt_bone_now_s() {
         std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+static double avg_edge_len(const std::vector<SculptVertex>& vs,
+                           const std::vector<SculptTriangle>& fs) {
+    if (fs.empty()) return 0.0;
+    auto seg = [&](int a, int b) -> double {
+        if (a < 0 || b < 0 || a >= (int)vs.size() || b >= (int)vs.size()) return 0.0;
+        return (vs[(size_t)a].pos - vs[(size_t)b].pos).length();
+    };
+    double sum = 0.0;
+    for (const auto& f : fs) {
+        sum += seg(f.v0, f.v1);
+        sum += seg(f.v1, f.v2);
+        sum += seg(f.v2, f.v0);
+    }
+    return sum / (double)(fs.size() * 3);
+}
+
 void SculptMesh::bind_skeleton(Skeleton* sk) {
     // reset() would delete the old pointer UNCONDITIONALLY - re-binding the
     // skeleton we already own would free it out from under the caller (UAF).
@@ -348,15 +388,40 @@ void SculptMesh::bind_skeleton(Skeleton* sk) {
         }
         bind_bone_[i] = bi;
         if (bj >= 0 && second > 1e-12) {
-            // inverse-distance blend of the two nearest joints softens
-            // the crease: w0 = (1/d0)/(1/d0 + 1/d1) = d1/(d0+d1)
-            double w0 = second / (best + second);
+            // two-joint blend softens the crease: legacy inverse-distance
+            // by default, per-bone influence falloff when radii are set
+            double w0 = bone_blend_weight(best, bi, second, bj, *sk);
             bind_bone2_[i] = bj;
             bind_wt_[i] = (unsigned char)(w0 * 255.0 + 0.5);
         }
     }
     bones_applied_ = skeleton_->pose_version; // bind pose == current pose
+    stretch_cap_ = avg_edge_len(bind_verts_, faces_) * Hittable::kStretchEdgeFactor;
 }
+
+// Stretch-balloon handling for the POSE drag's REMESH mode: subdivision only
+// makes sense while a pose is actually applied. Measures how far the current
+// edges have stretched past the bind snapshot; past max_ratio the bind mesh
+// is subdivided (so the rest shape and straighten stay intact), the skin is
+// re-bound at the new density, and the live pose is re-derived.
+bool SculptMesh::remesh_if_stretched(double max_ratio, size_t max_tris) {
+    if (!skeleton_ || bind_verts_.empty()) return false;
+    if (!skeleton_->bones_posed()) return false;
+    if (faces_.empty() || bind_verts_.size() != verts_.size()) return false;
+    double eb = avg_edge_len(bind_verts_, faces_);
+    if (eb <= 1e-9) return false;
+    double ec = avg_edge_len(verts_, faces_);
+    if (ec < eb * max_ratio) return false;
+    if (faces_.size() * 4 > max_tris) return false;
+    verts_ = bind_verts_;
+    remesh_subdivide();
+    bind_skeleton(skeleton_.get());
+    bvh_dirty_ = true;
+    apply_bones();
+    return true;
+}
+
+double SculptMesh::stretch_cap() const { return stretch_cap_; }
 
 // Keep the bind snapshot in step with sculpting: without this, every pose
 // apply (slider / pose drag / clip) would re-derive verts from the bind-time
@@ -387,8 +452,10 @@ void SculptMesh::refresh_bind_verts() {
             }
             bind_bone_[i] = bi;
             if (bj >= 0 && second > 1e-12) {
+                double w0 = bone_blend_weight(best, bi, second, bj,
+                                              *skeleton_);
                 bind_bone2_[i] = bj;
-                bind_wt_[i] = (unsigned char)(second / (best + second) * 255.0 + 0.5);
+                bind_wt_[i] = (unsigned char)(w0 * 255.0 + 0.5);
             } else {
                 bind_bone2_[i] = -1;
                 bind_wt_[i] = 255;
@@ -460,8 +527,10 @@ void SculptMesh::apply_bones() {
         if (t - last_bvh_rebuild_ > 0.25 || last_bvh_rebuild_ == 0.0) {
             rebuild_bvh();
             last_bvh_rebuild_ = sculpt_bone_now_s();
-            bvh_dirty_ = false;
+        } else {
+            refresh_bvh_bounds();
         }
+        bvh_dirty_ = false;
     }
 }
 

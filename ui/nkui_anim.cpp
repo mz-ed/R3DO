@@ -248,6 +248,24 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
             }
             Hittable* o = tgt_obj();
             if (!o) return;
+            // FREE_BONE: Rotation syncs the bone's live euler (radians, the
+            // unit FREE_BONE keys apply in), Position its live offset.
+            if (tg2.type == AnimTarget::FREE_BONE) {
+                const Skeleton* sk = o->skeleton();
+                if (!sk || tg2.bone < 0 || tg2.bone >= (int)sk->bones.size())
+                    return;
+                const Skeleton::Bone& b = sk->bones[(size_t)tg2.bone];
+                if (sel_prop_ == 1) {
+                    Vec3 e = bone_euler_rad(b.m);
+                    key_x_ = (float)e.x; key_y_ = (float)e.y; key_z_ = (float)e.z;
+                } else {
+                    key_x_ = (float)b.off.x;
+                    key_y_ = (float)b.off.y;
+                    key_z_ = (float)b.off.z;
+                    sel_prop_ = 0;
+                }
+                return;
+            }
             // Live base: the object's current offset IS its animation value
             // (drag/buttons/base edits move the base, not the offset).
             Vec3 v = o->anim_offset();
@@ -282,6 +300,16 @@ void NkUI::draw_anim_panel(Animator& anim, Camera& cam,
                                                (float)(cam.pitch - (double)cli.base_pitch), 0);
                 else ref = cam.pos - cli.base_pos;
                 src = "cam offset now";
+            } else if (tg2.type == AnimTarget::FREE_BONE) {
+                Hittable* o = tgt_obj();
+                const Skeleton* sk = o ? o->skeleton() : nullptr;
+                if (sk && tg2.bone >= 0 && tg2.bone < (int)sk->bones.size()) {
+                    const Skeleton::Bone& b = sk->bones[(size_t)tg2.bone];
+                    if (sel_prop_ == 1) ref = bone_euler_rad(b.m);
+                    else ref = b.off;
+                    src = sel_prop_ == 1 ? "bone euler now (rad)"
+                                         : "bone offset now";
+                } else src = nullptr;
             } else if (Hittable* o = tgt_obj()) {
                 ref = o->anim_offset();
                 src = "offset now (live base)";

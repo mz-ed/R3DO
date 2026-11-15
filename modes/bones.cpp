@@ -54,11 +54,13 @@ void draw_bones_overlay(Grid& grid, Camera& cam, DisplayWin& display) {
         const Skeleton* sk = obj ? obj->skeleton() : nullptr;
         if (!sk || sk->bones.empty()) continue;
 
-        // live world geometry: bind verts follow drag (translate), pose keys
-        // are applied per-frame by the animator, so re-project from the head.
-        std::vector<Vec3> joints((size_t)sk->bones.size());
-        for (int bi = 0; bi < (int)sk->bones.size(); bi++)
-            joints[(size_t)bi] = sk->joint(bi);
+        // live world geometry: joints are drawn at their POSED positions
+        // (chain transforms include live rotations/offsets), so the rig rides
+        // the deformation during playback and pose editing. At rest these
+        // equal the bind-space joints.
+        std::vector<Vec3> joints;
+        std::vector<double> wrot;
+        bone_chain_transforms(*sk, joints, wrot);
 
         // links
         bool has_sel = (g_sel_object == obj) && g_sel_bone >= 0 &&

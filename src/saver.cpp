@@ -181,10 +181,34 @@ std::string serialize_scene(const Grid& grid, const Camera& cam,
         out += buf;
         for (size_t bi = 0; bi < sk->bones.size(); bi++) {
             const Skeleton::Bone& b = sk->bones[bi];
-            snprintf(buf, sizeof(buf), "bone %zu %d %.4f %.4f %.4f %s\n",
-                     bi, b.parent, b.offset.x, b.offset.y, b.offset.z,
-                     quote_path(b.name).c_str());
-            out += buf;
+            int len = snprintf(buf, sizeof(buf), "bone %zu %d %.4f %.4f %.4f %s",
+                               bi, b.parent, b.offset.x, b.offset.y, b.offset.z,
+                               quote_path(b.name).c_str());
+            // optional influence suffix; plain lines stay byte-identical to
+            // old saves
+            if (b.influence > 1e-6)
+                len += snprintf(buf + len, sizeof(buf) - (size_t)len, " %.3f %.3f",
+                                b.influence, b.sharp);
+            if (len >= 0 && len < (int)sizeof(buf) - 1) {
+                buf[len++] = '\n';
+                buf[len] = 0;
+                out += buf;
+            }
+            // optional live-pose line; rest bones stay clean for old saves
+            bool posed = b.off.length() > 1e-9;
+            for (int r = 0; !posed && r < 3; r++)
+                for (int c = 0; !posed && c < 3; c++)
+                    if (b.m[r][c] != (r == c ? 1.0 : 0.0)) posed = true;
+            if (posed) {
+                snprintf(buf, sizeof(buf),
+                         "bonepose %zu %.6f %.6f %.6f"
+                         " %.8f %.8f %.8f %.8f %.8f %.8f %.8f %.8f %.8f\n",
+                         bi, b.off.x, b.off.y, b.off.z,
+                         b.m[0][0], b.m[0][1], b.m[0][2],
+                         b.m[1][0], b.m[1][1], b.m[1][2],
+                         b.m[2][0], b.m[2][1], b.m[2][2]);
+                out += buf;
+            }
         }
     }
 
@@ -242,10 +266,13 @@ static bool deserialize_stream(FILE* f, Grid& grid, Camera* cam,
         size_t len = strlen(line);
         while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) line[--len] = 0;
 
-        // A completed bone chain binds as soon as the next non-"bone" line
-        // shows up; vertices picked their bones the moment joints existed,
-        // but attaching here keeps bind() seeing the full chain.
-        if (cur_bones_idx >= 0 && strncmp(line, "bone ", 5) != 0) {
+        // A completed bone chain binds as soon as the next non-"bone"/
+        // non-"bonepose" line shows up; vertices picked their bones the
+        // moment joints existed, but attaching here keeps bind() seeing the
+        // full chain. "bonepose" lines (optional live pose) belong to the
+        // chain block too.
+        if (cur_bones_idx >= 0 && strncmp(line, "bone ", 5) != 0 &&
+            strncmp(line, "bonepose ", 9) != 0) {
             if (cur_sk && cur_bones_idx >= 0 &&
                 cur_bones_idx < (int)grid.free_objects_.size() &&
                 grid.free_objects_[(size_t)cur_bones_idx])
@@ -367,7 +394,33 @@ static bool deserialize_stream(FILE* f, Grid& grid, Camera* cam,
             b.parent = parent;
             b.name = name;
             b.offset = Vec3(ox, oy, oz);
+            // optional influence/sharpness suffix (see writer)
+            double inf = 0.0, shp = 0.0;
+            if (sscanf(bp, " %lf %lf", &inf, &shp) == 2) {
+                b.influence = inf;
+                b.sharp = shp > 0.5 ? shp : 2.0;
+            }
             cur_sk->bones.push_back(b);
+            continue;
+        }
+        if (strncmp(line, "bonepose ", 9) == 0) {
+            if (!cur_sk) continue;
+            int idx;
+            float ox, oy, oz;
+            double m[9];
+            if (sscanf(line + 9,
+                       "%d %f %f %f %lf %lf %lf %lf %lf %lf %lf %lf %lf",
+                       &idx, &ox, &oy, &oz,
+                       &m[0], &m[1], &m[2], &m[3], &m[4], &m[5],
+                       &m[6], &m[7], &m[8]) != 13)
+                continue;
+            if (idx < 0 || idx >= (int)cur_sk->bones.size()) continue;
+            Skeleton::Bone& b = cur_sk->bones[(size_t)idx];
+            b.off = Vec3(ox, oy, oz);
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 3; c++)
+                    b.m[r][c] = m[r * 3 + c];
+            cur_sk->touch_pose();
             continue;
         }
         if (strncmp(line, "terrain", 7) == 0 &&

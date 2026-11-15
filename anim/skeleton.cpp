@@ -1,5 +1,6 @@
 #include "skeleton.hpp"
 #include "hittable.hpp"
+#include <cmath>
 #include <vector>
 
 // ---- shared skeletal math ----
@@ -39,4 +40,50 @@ void bone_rest_joints(const Skeleton& sk, std::vector<Vec3>& joints) {
     joints.resize(sk.bones.size());
     for (int i = 0; i < (int)sk.bones.size(); i++)
         joints[(size_t)i] = sk.joint(i);
+}
+
+Vec3 bone_euler_rad(const double m[3][3]) {
+    double sy = -m[2][0];
+    if (sy > 1.0) sy = 1.0;
+    else if (sy < -1.0) sy = -1.0;
+    double y = std::asin(sy);
+    double x, z;
+    if (std::fabs(std::cos(y)) > 1e-9) {
+        x = std::atan2(m[2][1], m[2][2]);
+        z = std::atan2(m[1][0], m[0][0]);
+    } else {
+        // gimbal lock (|y| = pi/2): z is degenerate, pin it to 0 and solve x
+        // from the remaining non-degenerate entries
+        z = 0.0;
+        x = std::atan2(-m[1][2], m[1][1]);
+    }
+    return Vec3(x, y, z);
+}
+
+double bone_blend_weight(double d0, int b0, double d1, int b1,
+                         const Skeleton& sk) {
+    auto bone_of = [&](int b) -> const Skeleton::Bone* {
+        return (b >= 0 && b < (int)sk.bones.size())
+                   ? &sk.bones[(size_t)b] : nullptr;
+    };
+    const Skeleton::Bone* B0 = bone_of(b0);
+    const Skeleton::Bone* B1 = bone_of(b1);
+    double r0 = B0 ? B0->influence : 0.0;
+    double r1 = B1 ? B1->influence : 0.0;
+    if (r0 <= 1e-6 && r1 <= 1e-6) {
+        // legacy: inverse-distance blend w0 = (1/d0)/(1/d0 + 1/d1) = d1/(d0+d1)
+        if (d1 <= 1e-12) return 1.0;
+        return d1 / (d0 + d1);
+    }
+    auto falloff = [&](double d, double r, const Skeleton::Bone* B) {
+        if (r <= 1e-6) return 1.0; // unlimited reach
+        double t = 1.0 - d / r;
+        if (t <= 0.0) return 0.0;
+        double p = B ? B->sharp : 2.0;
+        return std::pow(t, p);
+    };
+    double f0 = falloff(d0, r0, B0);
+    double f1 = falloff(d1, r1, B1);
+    if (f0 + f1 <= 1e-9) return 1.0; // beyond every radius: nearest wins
+    return f0 / (f0 + f1);
 }

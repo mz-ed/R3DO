@@ -120,6 +120,10 @@ public:
     virtual bool bone_bound_vert(int bone, int idx, Vec3& out) const {
         (void)bone; (void)idx; (void)out; return false;
     }
+    // stretch safety: |off| beyond this tears the skin apart (2.5x the
+    // average bind edge length). 0 = no cap.
+    static constexpr double kStretchEdgeFactor = 2.5;
+    virtual double stretch_cap() const { return 0.0; }
     // true when any bone carries a live pose (off != 0 or rot != identity)
     bool bones_posed() const {
         return skeleton_ && skeleton_->bones_posed();

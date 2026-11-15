@@ -19,6 +19,11 @@ struct Skeleton {
         Vec3 offset;                      // bind-space joint position
         Vec3 off = Vec3(0, 0, 0);         // live extra translation from keys
         double m[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};  // live euler rot
+        // influence area: radius (bind units) where this bone's falloff dies
+        // out, plus the falloff exponent. 0 = unlimited reach (legacy
+        // nearest-joint behavior), so untouched scenes keep their look.
+        double influence = 0.0;
+        double sharp = 2.0;
 
         void clear_pose() {
             off = Vec3(0, 0, 0);
@@ -78,5 +83,19 @@ void bone_chain_transforms(const Skeleton& sk,
 
 // Bind-space (rest) joint positions for every bone.
 void bone_rest_joints(const Skeleton& sk, std::vector<Vec3>& joints);
+
+// Inverse of anim_euler_matrix (M = Rz(z)*Ry(y)*Rx(x), row-major): recovers
+// the XYZ euler (radians) a bone rotation matrix came from, so live poses can
+// be captured into FREE_BONE rotation keys. Gimbal-locked inputs pin z = 0
+// and solve x from the remaining entries; round-trips are exact to ~1e-9.
+Vec3 bone_euler_rad(const double m[3][3]);
+
+// Weight (0..1) of the primary joint given bind-space distances to the two
+// nearest joints. When no bone carries an influence radius this is the
+// legacy inverse-distance blend; otherwise each bone's radius/exponent shape
+// a falloff w = max(0, 1 - d/r)^p (radius 0 = unlimited reach). Verts past
+// every radius stay rigid with their nearest joint (no tearing at the edge).
+double bone_blend_weight(double d0, int b0, double d1, int b1,
+                         const Skeleton& sk);
 
 #endif

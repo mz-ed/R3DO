@@ -101,12 +101,24 @@ public:
     void relink_selected_bones();
     void rename_selected_bone(const char* name);
 
-    // bone gizmo (Bones mode): press near a joint to grab the bone; dragging
-    // edits its bind offset, or its live pose translation when a pose is
-    // active (drag-to-bend in the pose preview)
+    // bone gizmo (Bones mode): press near a joint to grab the bone. Drag
+    // action follows bone_drag_mode_: STRUCTURE edits bind offsets (re-binds
+    // on release), POSE moves points with the bone (live off), BEND rotates
+    // the bone toward the cursor (drag-to-bend).
+    enum { BONEDRAG_STRUCTURE = 0, BONEDRAG_POSE = 1, BONEDRAG_BEND = 2 };
     bool start_bone_drag(int mx, int my);
     bool is_bone_dragging() const { return bone_dragging_; }
     void bone_drag_update(int mx, int my);
+    int bone_drag_mode() const { return bone_drag_mode_; }
+    void set_bone_drag_mode(int m) {
+        if (m >= BONEDRAG_STRUCTURE && m <= BONEDRAG_BEND) bone_drag_mode_ = m;
+    }
+    // what a POSE-mode stretch does past the skin's safe limit
+    enum { STRETCH_LIMIT = 0, STRETCH_REMESH = 1 };
+    int stretch_mode() const { return stretch_mode_; }
+    void set_stretch_mode(int m) {
+        if (m >= STRETCH_LIMIT && m <= STRETCH_REMESH) stretch_mode_ = m;
+    }
 
     // pose mode: absolute euler sliders (degrees) on the selected bone, plus
     // straighten. pose_slider_tick applies only when a value changed.
@@ -118,6 +130,18 @@ public:
     void set_pose_pitch(float v) { pose_pitch_ = v; }
     void pose_slider_tick();
     void pose_straighten();
+    // writes the selected bone's live pose (euler + offset) into the clip
+    // targeting it as FREE_BONE keys at the playhead; creates that clip when
+    // none exists. interp: InterpolationType index from the anim panel.
+    void key_bone_pose_to_clip(int interp);
+
+    // per-bone influence area: falloff radius (0 = unlimited, legacy look)
+    // and sharpness exponent. Changing them re-derives the vertex binds.
+    float bone_influence();
+    float bone_sharp();
+    void set_bone_influence(float v);
+    void set_bone_sharp(float v);
+    void rederive_bone_binds();
 
     int selected_bone() const { return selected_bone_; }
     void set_selected_bone(int b) { selected_bone_ = b; sync_selection_hook(); }
@@ -240,11 +264,21 @@ private:
     Hittable* bone_drag_obj_ = nullptr;
     Skeleton* bone_drag_sk_ = nullptr;
     int bone_drag_mx_ = 0, bone_drag_my_ = 0;
-    bool bone_drag_pose_ = false; // true: drag edits live pose off
+    int bone_drag_mx0_ = 0, bone_drag_my0_ = 0; // press point (BEND reference)
+    Vec3 bone_drag_e0_;                         // euler at press (BEND)
+    bool bone_drag_pose_ = false;  // true: drag edits live pose off (non-structural)
+    int bone_drag_mode_ = BONEDRAG_POSE;        // session default: POSE
+    int stretch_mode_ = STRETCH_LIMIT;          // session default: capped
+    bool bone_drag_anim_paused_ = false;        // clip playback paused for drag
 
     // pose sliders (degrees) + last values actually applied
     float pose_roll_ = 0, pose_yaw_ = 0, pose_pitch_ = 0;
     Vec3 pose_applied_ = Vec3(0, 0, 0);
+    // true once the current run of pose edits has its undo snapshot; reset
+    // on bone switch / straighten / undo so the next run pushes a fresh one
+    bool pose_undo_dirty_ = false;
+    bool infl_undo_dirty_ = false;   // same pattern for influence sliders
+    bool bone_bind_pending_ = false; // influence changed while posed: re-derive on straighten
 
     struct ObjRef {
         enum Type { CELL, FREE } type;

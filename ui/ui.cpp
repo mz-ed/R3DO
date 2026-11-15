@@ -106,6 +106,9 @@ bool UI::undo() {
     undo_stack_.pop_back();
     deserialize_scene(snapshot, grid, &cam, &render_mode_, &palette_idx_);
     update_labels();
+    pose_undo_dirty_ = true; // restored state: next edit pushes a fresh snapshot
+    infl_undo_dirty_ = true;
+    bone_bind_pending_ = false;
     return true;
 }
 
@@ -230,6 +233,12 @@ void UI::pose_slider_tick() {
     Vec3& ap = pose_applied_;
     if (std::abs(want.x - ap.x) < 0.01 && std::abs(want.y - ap.y) < 0.01 &&
         std::abs(want.z - ap.z) < 0.01) return;
+    if (!pose_undo_dirty_) {
+        // one snapshot per run of slider edits (bonepose lines keep the
+        // live pose inside the scene snapshot)
+        push_undo();
+        pose_undo_dirty_ = true;
+    }
     const double D2R = M_PI / 180.0;
     // euler order Rz*Ry*Rx: pitch nods about X (bend), yaw turns about Y,
     // roll spins in the screen plane about Z (the view axis)
@@ -242,10 +251,135 @@ void UI::pose_slider_tick() {
 void UI::pose_straighten() {
     Hittable* obj = selected_free_object();
     if (!obj) return;
+    push_undo();
     obj->reset_bones();
+    // deferred influence re-derivation (set while posed) lands here, where
+    // the bind snapshot is valid again
+    if (bone_bind_pending_ && obj->skeleton()) {
+        bone_bind_pending_ = false;
+        obj->bind_skeleton(obj->skeleton_mut());
+    }
     obj->apply_bones();
     pose_roll_ = pose_yaw_ = pose_pitch_ = 0.0f;
     pose_applied_ = Vec3(0, 0, 0);
+    pose_undo_dirty_ = false; // next pose edit takes its own snapshot
+    infl_undo_dirty_ = false;
+}
+
+// Per-bone influence area: radius where the bone's falloff reaches (0 =
+// unlimited, matching the legacy nearest-joint weights) plus sharpness.
+// Writes re-derive the vertex binds so the tint/weights update immediately
+// while the chain is at rest; while posed, re-derivation is deferred to
+// Straighten (the bind snapshot must stay in bind space).
+static Skeleton* ui_edit_skeleton(UI* self, int& sel_bone) {
+    Hittable* o = self->selected_free_object();
+    Skeleton* sk = o ? o->skeleton_mut() : nullptr;
+    sel_bone = self->selected_bone();
+    if (!sk || sel_bone < 0 || sel_bone >= (int)sk->bones.size()) return nullptr;
+    return sk;
+}
+
+void UI::rederive_bone_binds() {
+    Hittable* obj = selected_free_object();
+    Skeleton* sk = obj ? obj->skeleton_mut() : nullptr;
+    if (!sk || sk->bones.empty()) return;
+    if (obj->bones_posed()) {
+        bone_bind_pending_ = true; // Straighten re-binds with the new radii
+        show_msg("Straighten applies influence");
+        return;
+    }
+    obj->bind_skeleton(sk);
+    obj->apply_bones();
+}
+
+float UI::bone_influence() {
+    int b;
+    Skeleton* sk = ui_edit_skeleton(this, b);
+    if (!sk) return 0.0f;
+    return (float)sk->bones[(size_t)b].influence;
+}
+
+float UI::bone_sharp() {
+    int b;
+    Skeleton* sk = ui_edit_skeleton(this, b);
+    if (!sk) return 2.0f;
+    return (float)sk->bones[(size_t)b].sharp;
+}
+
+void UI::set_bone_influence(float v) {
+    if (v < 0.0f) v = 0.0f;
+    if (v > 8.0f) v = 8.0f;
+    int b;
+    Skeleton* sk = ui_edit_skeleton(this, b);
+    if (!sk) return;
+    if (std::fabs(sk->bones[(size_t)b].influence - v) < 1e-4) return;
+    if (!infl_undo_dirty_) {
+        push_undo(); // bonepose lines keep pose; structure is in the snapshot
+        infl_undo_dirty_ = true;
+    }
+    sk->bones[(size_t)b].influence = v;
+    rederive_bone_binds();
+}
+
+void UI::set_bone_sharp(float v) {
+    if (v < 0.5f) v = 0.5f;
+    if (v > 8.0f) v = 8.0f;
+    int b;
+    Skeleton* sk = ui_edit_skeleton(this, b);
+    if (!sk) return;
+    if (std::fabs(sk->bones[(size_t)b].sharp - v) < 1e-4) return;
+    if (!infl_undo_dirty_) {
+        push_undo();
+        infl_undo_dirty_ = true;
+    }
+    sk->bones[(size_t)b].sharp = v;
+    rederive_bone_binds();
+}
+
+// Key-from-pose: bake the selected bone's live rotation + offset into the
+// clip that targets it (FREE_BONE) at the animator's playhead, creating that
+// clip when none exists. This is the pose -> key -> scrub -> pose loop.
+void UI::key_bone_pose_to_clip(int interp) {
+    Hittable* o = selected_free_object();
+    Skeleton* sk = o ? o->skeleton_mut() : nullptr;
+    if (!sk || selected_bone_ < 0 || selected_bone_ >= (int)sk->bones.size()) {
+        show_msg("Select a bone first");
+        return;
+    }
+    Animator* a = animator();
+    if (!a) { show_msg("No animator"); return; }
+    int fi = obj_refs_[(size_t)selected_obj_].free_idx;
+
+    int found = -1;
+    for (size_t c = 0; c < a->clips.size(); c++) {
+        const AnimTarget& t = a->clips[c].target;
+        if (t.type == AnimTarget::FREE_BONE && t.free_idx == fi &&
+            t.bone == selected_bone_) {
+            found = (int)c;
+            break;
+        }
+    }
+    if (found < 0) {
+        Animator::ClipInstance ci;
+        ci.target.type = AnimTarget::FREE_BONE;
+        ci.target.free_idx = fi;
+        ci.target.bone = selected_bone_;
+        ci.base_snapped = true; // bones apply directly, no pose-base snap
+        ci.clip.name = "Bone " + sk->bones[(size_t)selected_bone_].name;
+        a->add_clip(ci.target, ci.clip);
+        found = (int)a->clips.size() - 1;
+    }
+    Animator::ClipInstance& cli = a->clips[(size_t)found];
+    const Skeleton::Bone& b = sk->bones[(size_t)selected_bone_];
+    float t = a->global_time < 0.0f ? 0.0f : a->global_time;
+    cli.clip.add_keyframe(AnimProperty::Rotation, t, bone_euler_rad(b.m),
+                          (InterpolationType)interp);
+    cli.clip.add_keyframe(AnimProperty::Position, t, b.off,
+                          (InterpolationType)interp);
+    a->update_max_time();
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Keyed @ %.2fs (%s)", t, cli.clip.name.c_str());
+    show_msg(msg);
 }
 
 void UI::rename_selected_bone(const char* name) {
@@ -413,6 +547,8 @@ void UI::sync_selection_hook() {
     // switching bones: baseline the pose sliders at what they display so a
     // stale "applied" value can't skip the first change on the new bone
     pose_applied_ = Vec3(pose_roll_, pose_yaw_, pose_pitch_);
+    pose_undo_dirty_ = false; // new bone: next edit run pushes a fresh snapshot
+    infl_undo_dirty_ = false;
 }
 
 void UI::select_object(int i) {
@@ -471,13 +607,18 @@ bool UI::start_bone_drag(int mx, int my) {
     int best_bone = -1, best_fi = -1;
     double best_d2 = 16.0 * 16.0; // ~16 px pick radius
 
+    // hit-test against POSED joint positions (chain transforms include live
+    // rotations/offsets) so grabbing works on a moving/posed rig too
+    std::vector<Vec3> wjoints;
+    std::vector<double> wrot;
     const auto& fobjs = grid.free_objects();
     for (size_t fi = 0; fi < fobjs.size(); fi++) {
         Hittable* obj = fobjs[fi].get();
         Skeleton* sk = obj ? obj->skeleton_mut() : nullptr;
         if (!sk || sk->bones.empty()) continue;
+        bone_chain_transforms(*sk, wjoints, wrot);
         for (int bi = 0; bi < (int)sk->bones.size(); bi++) {
-            Vec3 jp = sk->joint((size_t)bi);
+            const Vec3& jp = wjoints[(size_t)bi];
             Vec3 rel = jp - cam.pos;
             double depth = dot(rel, fwd);
             if (depth <= 0.05) continue;
@@ -493,6 +634,10 @@ bool UI::start_bone_drag(int mx, int my) {
         }
     }
     if (!best_sk) return false;
+
+    // bonepose lines keep the pose inside scene snapshots, so one push per
+    // grab covers both structural and pose drags (idle clicks are cheap)
+    push_undo();
 
     select_object(-1);
     for (int si = 0; si < (int)obj_refs_.size(); si++) {
@@ -510,9 +655,21 @@ bool UI::start_bone_drag(int mx, int my) {
     bone_drag_bone_ = best_bone;
     bone_drag_mx_ = mx;
     bone_drag_my_ = my;
-    // pose mode: when a live pose is active, the drag bends the preview
-    // (pose translation) instead of editing the bind offsets
-    bone_drag_pose_ = best_obj->bones_posed();
+    bone_drag_mx0_ = mx;
+    bone_drag_my0_ = my;
+    bone_drag_e0_ = bone_euler_rad(
+        best_sk->bones[(size_t)(best_sk->bones[(size_t)best_bone].parent >= 0
+                                    ? best_sk->bones[(size_t)best_bone].parent
+                                    : best_bone)].m);
+    // STRUCTURE edits the rig at rest (re-binds on release); POSE/BEND edit
+    // the live pose (points follow, never re-bind)
+    bone_drag_pose_ = bone_drag_mode_ != BONEDRAG_STRUCTURE;
+    // clips would fight the drag: pause playback for its duration
+    bone_drag_anim_paused_ = false;
+    if (Animator* a = animator(); a && a->global_playing) {
+        a->global_playing = false;
+        bone_drag_anim_paused_ = true;
+    }
     dragging_ = true; // release path routes through end_drag like object drags
     return true;
 }
@@ -536,7 +693,11 @@ void UI::bone_drag_update(int mx, int my) {
     Vec3 rgt = cam.right();
     Vec3 upv = cross(rgt, fwd);
 
-    Vec3 jp = sk->joint((size_t)bi);
+    // depth scale from the POSED joint (where the dot actually is)
+    std::vector<Vec3> wjoints;
+    std::vector<double> wrot;
+    bone_chain_transforms(*sk, wjoints, wrot);
+    const Vec3& jp = wjoints[(size_t)bi];
     Vec3 rel = jp - cam.pos;
     double depth = dot(rel, fwd);
     if (depth <= 0.05) {
@@ -552,10 +713,35 @@ void UI::bone_drag_update(int mx, int my) {
         : rgt * (ddx * f) + upv * (-ddy * f);
 
     Skeleton::Bone& b = sk->bones[(size_t)bi];
-    if (bone_drag_pose_) {
-        b.off = b.off + delta;
+    if (bone_drag_mode_ == BONEDRAG_BEND) {
+        // drag-to-bend: rotating the grabbed bone itself would only swing
+        // the chain BELOW its joint (the grabbed dot would stay put), so the
+        // pivot is the parent bone — the grabbed dot then arcs with the
+        // cursor. Roots bend themselves. Absolute from the press euler, so
+        // no per-move drift; screen-plane roll for horizontal motion, pitch
+        // for vertical (signs chosen so the dot follows the cursor).
+        int pivot = b.parent >= 0 ? b.parent : bi;
+        const double KP = 0.5 * M_PI / 180.0; // radians per pixel (~180°/360px)
+        Vec3 e = bone_drag_e0_;
+        e.z -= (mx - bone_drag_mx0_) * KP;
+        e.x += (my - bone_drag_my0_) * KP;
+        obj->set_bone_pose(pivot, e, sk->bones[(size_t)pivot].off);
+        obj->apply_bones();
+    } else if (bone_drag_pose_) {
+        Vec3 off = b.off + delta;
+        double cap = obj->stretch_cap();
+        // LIMIT stretch mode: the drag dead-ends just before the skin
+        // tears. A pose already past the cap (keys / REMESH mode) is left
+        // alone instead of snapping back on grab.
+        if (cap > 0.0 && off.length() > cap && b.off.length() <= cap)
+            off = off * (cap / off.length());
+        b.off = off;
         sk->touch_pose();             // version so idle renders follow too
         obj->apply_bones();           // preview bends under the cursor
+        if (stretch_mode_ == STRETCH_REMESH) {
+            if (auto* scm = dynamic_cast<SculptMesh*>(obj))
+                scm->remesh_if_stretched(1.6, 400000);
+        }
     } else {
         b.offset = b.offset + delta; // rest-pose rig edit (bind space)
     }
@@ -637,6 +823,9 @@ bool UI::rehome_free(int sel, int i, int j, int k) {
         return false;
     Hittable* obj = grid.free_objects()[(size_t)rr->free_idx].get();
     if (!obj || grid.get(i, j, k)) return false; // target cell taken
+    // Deformable meshes stretch beyond one cell: keep them on the free list
+    // so the raytracer's cell walk can never cull deformed geometry.
+    if (obj->skeleton()) return false;
     int taken = rr->free_idx;
     Hittable* raw = grid.take_free(obj);
     if (!raw) return false;
@@ -755,6 +944,10 @@ void UI::end_drag() {
         // posed verts and break the rig.
         if (obj && sk && obj->skeleton() == sk && !bone_drag_pose_)
             obj->bind_skeleton(sk);
+        if (bone_drag_anim_paused_) {
+            bone_drag_anim_paused_ = false;
+            if (Animator* a = animator()) a->global_playing = true;
+        }
         return;
     }
     dragging_ = false;
@@ -762,10 +955,17 @@ void UI::end_drag() {
 
 void UI::cancel_drag() {
     dragging_ = false;
-    bone_dragging_ = false;
-    bone_drag_obj_ = nullptr;
-    bone_drag_sk_ = nullptr;
-    bone_drag_bone_ = -1;
+    if (bone_dragging_) {
+        // cancel restores playback like a normal end does
+        bone_dragging_ = false;
+        bone_drag_obj_ = nullptr;
+        bone_drag_sk_ = nullptr;
+        bone_drag_bone_ = -1;
+        if (bone_drag_anim_paused_) {
+            bone_drag_anim_paused_ = false;
+            if (Animator* a = animator()) a->global_playing = true;
+        }
+    }
     Hittable* obj = nullptr;
     // validate sel after dragging_ is cleared (drag_obj requires dragging_)
     if (drag_.sel >= 0 && drag_.sel < (int)obj_refs_.size()) {

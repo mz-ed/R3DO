@@ -369,6 +369,7 @@ bool Mesh::hit(const Ray& r_in, double t_min, double t_max, HitRecord& rec) cons
 
         // AABB slab test
         float tmin_f = (float)t_min;
+        float nt1 = closest_t;
         bool hit_box = true;
         for (int a = 0; a < 3; a++) {
             float invD = 1.0f / r.direction()[a];
@@ -376,10 +377,11 @@ bool Mesh::hit(const Ray& r_in, double t_min, double t_max, HitRecord& rec) cons
             float t1 = (node.bmax[a] - r.origin()[a]) * invD;
             if (invD < 0) std::swap(t0, t1);
             tmin_f = std::max(t0, tmin_f);
-            closest_t = std::min(t1, closest_t);
-            if (closest_t <= tmin_f) { hit_box = false; break; }
+            nt1 = std::min(t1, nt1);
+            if (nt1 <= tmin_f) { hit_box = false; break; }
         }
         if (!hit_box) continue;
+        closest_t = nt1;
 
         if (node.count > 0) {
             // Leaf: intersect triangles
@@ -462,6 +464,7 @@ void Mesh::translate(const Vec3& d) {
     nodes_.clear();
     triangles_ = std::move(tris);
     build_sah(triangles_, 0, (int)triangles_.size());
+    build_soa();
 }
 
 // ---- skeleton support ----
@@ -478,13 +481,38 @@ void Mesh::rebuild_bvh() {
     nodes_.clear();
     triangles_ = std::move(tris);
     build_sah(triangles_, 0, (int)triangles_.size());
+    build_soa();
+}
+
+void Mesh::refresh_bvh_bounds() {
+    if (nodes_.empty() || triangles_.empty()) return;
+    for (int i = (int)nodes_.size() - 1; i >= 0; i--) {
+        FlatNode& n = nodes_[(size_t)i];
+        if (n.count > 0) {
+            n.bmin[0] = n.bmin[1] = n.bmin[2] = 1e30f;
+            n.bmax[0] = n.bmax[1] = n.bmax[2] = -1e30f;
+            for (int k = 0; k < n.count; k++) {
+                const Triangle& t = triangles_[(size_t)n.leftFirst + k];
+                expand_point(n.bmin, n.bmax, t.v0);
+                expand_point(n.bmin, n.bmax, t.v1);
+                expand_point(n.bmin, n.bmax, t.v2);
+            }
+        } else {
+            const FlatNode& L = nodes_[(size_t)n.leftFirst];
+            const FlatNode& R = nodes_[(size_t)n.leftFirst + 1];
+            for (int a = 0; a < 3; a++) {
+                n.bmin[a] = std::min(L.bmin[a], R.bmin[a]);
+                n.bmax[a] = std::max(L.bmax[a], R.bmax[a]);
+            }
+        }
+    }
 }
 
 void Mesh::bind_skeleton(Skeleton* sk) {
     // reset() would delete the old pointer UNCONDITIONALLY - re-binding the
     // skeleton we already own would free it out from under the caller (UAF).
     if (skeleton_.get() != sk) skeleton_.reset(sk);
-    if (!sk) { bind_.reset(); return; }
+    if (!sk) { bind_.reset(); stretch_cap_ = 0.0; return; }
     bind_ = std::make_unique<Bind>();
     bind_->tris = triangles_;
     // nearest bind-space joint per triangle corner (parents-first chain sum)
@@ -509,15 +537,25 @@ void Mesh::bind_skeleton(Skeleton* sk) {
             }
             bind_->bone[f * 3 + c] = bi;
             if (bj >= 0 && second > 1e-12) {
-                // inverse-distance blend of the two nearest joints softens
-                // the crease: w0 = (1/d0)/(1/d0 + 1/d1) = d1/(d0+d1)
-                double w0 = second / (best + second);
+                // two-joint blend softens the crease: legacy inverse-distance
+                // by default, per-bone influence falloff when radii are set
+                double w0 = bone_blend_weight(best, bi, second, bj, *sk);
                 bind_->bone2[f * 3 + c] = bj;
                 bind_->wt[f * 3 + c] = (unsigned char)(w0 * 255.0 + 0.5);
             }
         }
     }
     bones_applied_ = skeleton_->pose_version; // bind pose == current pose
+    stretch_cap_ = 0.0;
+    if (!bind_->tris.empty()) {
+        double sum = 0.0;
+        for (const auto& t : bind_->tris) {
+            sum += (t.v0 - t.v1).length();
+            sum += (t.v1 - t.v2).length();
+            sum += (t.v2 - t.v0).length();
+        }
+        stretch_cap_ = (sum / (double)(bind_->tris.size() * 3)) * Hittable::kStretchEdgeFactor;
+    }
 }
 
 void Mesh::set_bone_pose(int bone, const Vec3& rot, const Vec3& off) {
@@ -568,8 +606,11 @@ void Mesh::apply_bones() {
         if (t - last_bvh_rebuild_ > 0.25 || last_bvh_rebuild_ == 0.0) {
             rebuild_bvh();
             last_bvh_rebuild_ = t;
-            bvh_dirty_ = false;
+        } else {
+            refresh_bvh_bounds();
+            build_soa();
         }
+        bvh_dirty_ = false;
     }
 }
 
