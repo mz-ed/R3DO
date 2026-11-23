@@ -124,6 +124,8 @@ public:
     // average bind edge length). 0 = no cap.
     static constexpr double kStretchEdgeFactor = 2.5;
     virtual double stretch_cap() const { return 0.0; }
+    // XZ footprint radius in world units (overhead map markers + picking)
+    virtual double bound_radius_xz() const { return 0.28; }
     // true when any bone carries a live pose (off != 0 or rot != identity)
     bool bones_posed() const {
         return skeleton_ && skeleton_->bones_posed();

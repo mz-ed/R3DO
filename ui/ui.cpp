@@ -7,9 +7,12 @@
 #include "obj_loader.hpp"
 #include "heightfield.hpp"
 #include "sculpt_mesh.hpp"
+#include "shapes/mesh.hpp"
 #include "render.hpp"
+#include "overhead/pick.hpp"
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 
@@ -167,6 +170,53 @@ Hittable* UI::selected_free_object() {
         !grid.free_objects_[(size_t)fi])
         return nullptr;
     return grid.free_objects_[(size_t)fi].get();
+}
+
+Mesh* UI::selected_mesh() {
+    auto* obj = selected_free_object();
+    return obj ? dynamic_cast<Mesh*>(obj) : nullptr;
+}
+
+void UI::set_subdivide_radius(double r) { if (r >= 0.0) subdivide_radius_ = r; }
+void UI::set_subdivide_sharp(double s)  { if (s > 0.0) subdivide_sharp_ = s; }
+void UI::set_subdivide_levels(int l)    { if (l >= 1) subdivide_levels_ = l; }
+void UI::set_sculpt_awaiting_center(bool v) { subdivide_await_center_ = v; }
+void UI::set_sculpt_center(const Vec3& p) { subdivide_center_ = p; subdivide_center_valid_ = true; }
+
+void UI::set_mesh_scale(double s) {
+    if (s <= 0.0) s = 0.05;
+    auto* sm = selected_mesh();
+    if (!sm) return;
+    push_undo();
+    // apply as a delta from the last slider value so repeated slider moves
+    // compound correctly about the object center
+    sm->scale(Vec3(s / mesh_scale_prev_, s / mesh_scale_prev_, s / mesh_scale_prev_));
+    mesh_scale_prev_ = s;
+    mesh_scale_ = s;
+}
+
+void UI::subdivide_selected_area() {
+    auto* sm = selected_mesh();
+    if (!sm) { show_msg("select a mesh object first"); return; }
+    if (!subdivide_center_valid_) { show_msg("click Set Center, then click on the object"); return; }
+    push_undo();
+    sm->subdivide_area(subdivide_center_, subdivide_radius_, subdivide_sharp_, subdivide_levels_);
+    char lbl[96];
+    snprintf(lbl, sizeof(lbl), "subdivided area r=%.2f sharp=%.2f", subdivide_radius_, subdivide_sharp_);
+    show_msg(lbl);
+}
+
+void UI::apply_customize_at(const Vec3& center) {
+    auto* sm = selected_mesh();
+    if (!sm) return;
+    push_undo();
+    sm->customize(center, customize_radius_, customize_sharp_,
+                  customize_strength_, customize_mode_);
+    char lbl[64];
+    static const char* names[4] = { "Inflate", "Deflate", "Pull", "Push" };
+    snprintf(lbl, sizeof(lbl), "customize %s r=%.2f s=%.2f",
+             names[customize_mode_], customize_radius_, customize_sharp_);
+    show_msg(lbl);
 }
 
 const Skeleton* UI::selected_skeleton() const {
@@ -552,8 +602,9 @@ void UI::sync_selection_hook() {
 }
 
 void UI::select_object(int i) {
-    if (i < 0) { selected_obj_ = -1; sync_selection_hook(); return; }
+    if (i < 0) { selected_obj_ = -1; sync_selection_hook(); mesh_scale_prev_ = 1.0; mesh_scale_sel_ = -1; return; }
     if (i >= (int)obj_names_.size()) return;
+    if (i != mesh_scale_sel_) { mesh_scale_prev_ = 1.0; mesh_scale_sel_ = i; }
     selected_obj_ = i;
 }
 
@@ -848,6 +899,34 @@ bool UI::start_drag(int mx, int my) {
     // joint — those belong to the bone gizmo, not the object-drag gizmo.
     if ((render_mode() == MODE_BONES || render_mode() == MODE_BONES_RAYTRACE) &&
         start_bone_drag(mx, my)) return true;
+    // Overhead map: pick in map space (nearest marker / occupied column).
+    // Selection only — the 3D gizmo drag machinery has no meaning here.
+    if (render_mode() == MODE_OVERHEAD) {
+        Hittable* hit = overhead_pick(display, grid, mx, my);
+        if (!hit) {
+            select_object(-1);
+            return false;
+        }
+        int sel = resolve_pick(hit, hit->get_center());
+        if (sel < 0) return false;
+        select_object(sel);
+        return false;
+    }
+    // --- gizmo axis drag (Unity-style): X screen right, Y screen up,
+    //     Z depth close+far line through the selected object's center ---
+    if (gizmo_axis_ >= 0) {
+        Hittable* hit = selected_obj();
+        if (hit) {
+            dragging_ = true;
+            gizmo_dragging_ = true;
+            drag_.sel = selected_obj_;
+            drag_.undo_saved = false;
+            drag_.mx0 = mx;
+            drag_.my0 = my;
+            drag_.visual0 = hit->get_center();
+            return true;
+        }
+    }
     HitRecord rec;
     if (!pick_at_mouse(grid, cam, display.width(), display.height(), mx, my, rec))
         return false;
@@ -879,6 +958,49 @@ bool UI::start_drag(int mx, int my) {
 
 void UI::drag_update(int mx, int my, bool shift_held) {
     if (!dragging_) return;
+    // Unity-style gizmo axis drag: translate the selected object along one
+    // screen-space axis (X right, Y up, Z depth close+far).
+    if (gizmo_axis_ >= 0 && drag_.sel >= 0 &&
+        drag_.sel < (int)obj_refs_.size()) {
+        Hittable* obj = drag_obj();
+        if (!obj) {
+            dragging_ = false;
+            return;
+        }
+        Vec3 center;
+        if (!selected_pos(center)) {
+            dragging_ = false;
+            return;
+        }
+        int h = display.height();
+        Vec3 fwd = cam.forward(), rgt = cam.right(), upv = cross(rgt, fwd);
+        Vec3 rel = center - cam.pos;
+        double depth = dot(rel, fwd);
+        if (depth <= 0.05) {
+            drag_.mx0 = mx;
+            drag_.my0 = my;
+            return;
+        }
+        // per-pixel world size at the object's depth (inverse of project())
+        double f = depth * VIEWPORT_HEIGHT / (FOCAL_LENGTH * h);
+        int ddx = mx - drag_.mx0, ddy = my - drag_.my0;
+        Vec3 delta;
+        switch (gizmo_axis_) {
+        case 0: delta = rgt * (ddx * f); break;        // X: screen right
+        case 1: delta = upv * (-ddy * f); break;       // Y: screen up
+        default: delta = fwd * (-ddy * f); break;      // Z: close+far depth
+        }
+        if (!drag_.undo_saved) {
+            drag_.undo_saved = true;
+            snapshot_for_undo();
+        }
+        obj->translate(delta);
+        ObjRef& rr = obj_refs_[(size_t)drag_.sel];
+        rr.base_center = obj->get_center() - obj->anim_offset();
+        drag_.mx0 = mx;
+        drag_.my0 = my;
+        return;
+    }
     // bone gizmo: separate path, uses screen delta instead of a grab ray
     if (bone_dragging_) { bone_drag_update(mx, my); return; }
     Hittable* obj = drag_obj();
@@ -950,6 +1072,10 @@ void UI::end_drag() {
         }
         return;
     }
+    if (gizmo_dragging_) {
+        gizmo_dragging_ = false;
+        gizmo_axis_ = -1;
+    }
     dragging_ = false;
 }
 
@@ -985,6 +1111,10 @@ void UI::cancel_drag() {
         int i, j, k;
         if (grid.world_to_cell(r.base_center, i, j, k))
             rehome_free(drag_.sel, i, j, k);
+    }
+    if (gizmo_dragging_) {
+        gizmo_dragging_ = false;
+        gizmo_axis_ = -1;
     }
     drag_.sel = -1;
 }
@@ -1223,3 +1353,116 @@ void UI::confirm_save() {
     }
     save_dialog_active_ = false;
 }
+
+// ---- Unity-style axis gizmo at the selected object ----
+
+Hittable* UI::selected_obj() const {
+    if (selected_obj_ < 0 || selected_obj_ >= (int)obj_refs_.size())
+        return nullptr;
+    const ObjRef& r = obj_refs_[(size_t)selected_obj_];
+    if (r.type == ObjRef::FREE) {
+        if (r.free_idx < 0 || r.free_idx >= (int)grid.free_objects().size())
+            return nullptr;
+        return grid.free_objects()[(size_t)r.free_idx].get();
+    }
+    return grid.get(r.i, r.j, r.k);
+}
+
+// Which gizmo axis (if any) lies under the mouse: X = screen right,
+// Y = screen up, Z = depth close+far line through the object center.
+int UI::gizmo_axis_at(int mx, int my, const Camera& c, int ww, int hh) {
+    Hittable* obj = selected_obj();
+    if (!obj) return -1;
+    Vec3 center = obj->get_center();
+    int sx, sy;
+    if (!project_point(c, ww, hh, center, sx, sy)) return -1;
+    Vec3 rel = center - c.pos;
+    double depth = dot(rel, c.forward());
+    if (depth <= 0.05) return -1;
+    double f = depth * VIEWPORT_HEIGHT / (FOCAL_LENGTH * hh);
+    double len = 45.0 * f; // ~45 px at this depth
+    Vec3 rgt = c.right(), upv = cross(rgt, c.forward()), fwd = c.forward();
+    int ax, ay, bx, by, zfx, zfy, zcx, zcy;
+    if (!project_point(c, ww, hh, center + rgt * len, ax, ay)) return -1;
+    if (!project_point(c, ww, hh, center + upv * len, bx, by)) return -1;
+    if (!project_point(c, ww, hh, center + fwd * len, zfx, zfy)) return -1;
+    if (!project_point(c, ww, hh, center - fwd * len, zcx, zcy)) return -1;
+    auto seg_d2 = [&](int x0, int y0, int x1, int y1, int px, int py) -> double {
+        double dx = x1 - x0, dy = y1 - y0;
+        double l2 = dx * dx + dy * dy;
+        if (l2 < 1e-6) {
+            double ux = px - x0, uy = py - y0;
+            return ux * ux + uy * uy;
+        }
+        double t = ((px - x0) * dx + (py - y0) * dy) / l2;
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
+        double qx = x0 + t * dx, qy = y0 + t * dy;
+        double ux = px - qx, uy = py - qy;
+        return ux * ux + uy * uy;
+    };
+    int best = -1;
+    double best_d = 10.0 * 10.0; // ~10 px pick radius
+    double d = seg_d2(sx, sy, ax, ay, mx, my); // X: screen right
+    if (d < best_d) { best_d = d; best = 0; }
+    d = seg_d2(sx, sy, bx, by, mx, my);        // Y: screen up
+    if (d < best_d) { best_d = d; best = 1; }
+    d = seg_d2(zfx, zfy, zcx, zcy, mx, my);   // Z: close+far depth
+    if (d < best_d) best = 2;
+    return best;
+}
+
+// Draw the axis gizmo (red X, green Y, blue close+far Z) at the selected
+// object's projected center; the constrained axis draws in white while a
+// gizmo drag is active.
+void UI::draw_gizmo(DisplayWin& d, const Camera& c) {
+    if (is_sculpt_mode()) return;
+    Hittable* obj = selected_obj();
+    if (!obj) return;
+    Vec3 center = obj->get_center();
+    int ww = d.width(), hh = d.height();
+    int sx, sy;
+    if (!project_point(c, ww, hh, center, sx, sy)) return;
+    Vec3 rel = center - c.pos;
+    double depth = dot(rel, c.forward());
+    if (depth <= 0.05) return;
+    double f = depth * VIEWPORT_HEIGHT / (FOCAL_LENGTH * hh);
+    double len = 45.0 * f;
+    Vec3 rgt = c.right(), upv = cross(rgt, c.forward()), fwd = c.forward();
+    int ax, ay, bx, by, zfx, zfy, zcx, zcy;
+    if (!project_point(c, ww, hh, center + rgt * len, ax, ay)) return;
+    if (!project_point(c, ww, hh, center + upv * len, bx, by)) return;
+    if (!project_point(c, ww, hh, center + fwd * len, zfx, zfy)) return;
+    if (!project_point(c, ww, hh, center - fwd * len, zcx, zcy)) return;
+
+    auto arrow = [&](int x0, int y0, int x1, int y1, unsigned col) {
+        d.draw_line(x0, y0, x1, y1, col);
+        double dx = x1 - x0, dy = y1 - y0;
+        double l = std::sqrt(dx * dx + dy * dy);
+        if (l < 2.0) return;
+        dx /= l; dy /= l;
+        int head = 7;
+        int hx = (int)(x1 - dx * head + dy * 3);
+        int hy = (int)(y1 - dy * head - dx * 3);
+        int hx2 = (int)(x1 - dx * head - dy * 3);
+        int hy2 = (int)(y1 - dy * head + dx * 3);
+        d.draw_line(x1, y1, hx, hy, col);
+        d.draw_line(x1, y1, hx2, hy2, col);
+    };
+
+    d.draw_crosshair(sx, sy, 3, 0xffffff);
+    // X: red (screen right), Y: green (screen up), Z: blue (close+far depth)
+    arrow(sx, sy, ax, ay, 0xff0000);
+    arrow(sx, sy, bx, by, 0x00cc00);
+    arrow(zfx, zfy, zcx, zcy, 0x0000ff);
+    if (gizmo_dragging_) {
+        int hx, hy;
+        switch (gizmo_axis_) {
+        case 0: hx = ax; hy = ay; break;
+        case 1: hx = bx; hy = by; break;
+        default: hx = zfx; hy = zfy; break;
+        }
+        arrow(sx, sy, hx, hy, 0xffffff); // constrained axis highlight
+    }
+}
+

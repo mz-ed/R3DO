@@ -16,6 +16,13 @@
 #include <cstdio>
 #include <cstring>
 
+#include "nkui.hpp"
+#include "ui.hpp"
+#include "display.hpp"
+#include "v3.hpp"
+#include <cstdio>
+#include <cstring>
+
 // ---- static event forwarding: DisplayWin hook -> Nuklear input ----
 static Display* g_dpy = nullptr;
 static int g_screen = 0;

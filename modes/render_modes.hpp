@@ -29,6 +29,7 @@ inline int mode_count() { return 7; }
 // scene under the same overlay. Both share the joint gizmo.
 inline constexpr int MODE_BONES = 5;
 inline constexpr int MODE_BONES_RAYTRACE = 6;
+inline constexpr int MODE_OVERHEAD = 2;
 
 // Selection hook for overlay renderers: UI writes these whenever the sidebar
 // picks a bone, so modes/bones.cpp can highlight the joint and tint the verts

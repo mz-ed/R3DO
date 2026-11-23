@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <cmath>
 
 struct SculptVertex {
     Vec3 pos;
@@ -75,6 +76,12 @@ public:
     void refresh_bind_verts();
     double stretch_cap() const override;
     bool remesh_if_stretched(double max_ratio, size_t max_tris);
+    double bound_radius_xz() const override {
+        if (fn2_.empty()) return 0.28;
+        double dx = fn2_[0].bmax[0] - fn2_[0].bmin[0];
+        double dz = fn2_[0].bmax[2] - fn2_[0].bmin[2];
+        return 0.5 * std::sqrt(dx * dx + dz * dz);
+    }
     double bone_span() const override;
     Vec3 bone_anchor() const override;
     void remap_bone_binds(int removed, int replacement) override;

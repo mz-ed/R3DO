@@ -6,7 +6,8 @@ src/main.o: src/main.cpp src/v3.hpp src/ray.hpp src/hittable.hpp \
  sculpt/brush.hpp src/ray.hpp shapes/heightfield.hpp anim/animation.hpp \
  src/saver.hpp src/render.hpp ui/startscreen.hpp src/settings.hpp \
  src/settings.hpp modes/billboard.hpp modes/overhead.hpp \
- sculpt/sculpt_mesh.hpp ui/nkui.hpp
+ sculpt/sculpt_mesh.hpp ui/nkui.hpp modes/overhead/view.hpp \
+ shapes/mesh.hpp
 src/v3.hpp:
 src/ray.hpp:
 src/hittable.hpp:
@@ -38,3 +39,5 @@ modes/billboard.hpp:
 modes/overhead.hpp:
 sculpt/sculpt_mesh.hpp:
 ui/nkui.hpp:
+modes/overhead/view.hpp:
+shapes/mesh.hpp:

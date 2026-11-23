@@ -16,6 +16,8 @@
 #include "animation.hpp"
 #include "ui/nkui.hpp"
 #include "render_modes.hpp"
+#include "overhead/view.hpp"
+#include "shapes/mesh.hpp"
 #include <iostream>
 #include <cmath>
 #include <chrono>
@@ -169,8 +171,8 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
 
         // Gizmo markers: green crosshair on the object under the idle mouse,
         // red crosshair on the object being dragged.
+        int mx = display.mouse_x(), my = display.mouse_y();
         if (!ui.is_sculpt_mode()) {
-            int mx = display.mouse_x(), my = display.mouse_y();
             if (ui.is_dragging()) {
                 Vec3 c;
                 int sx, sy;
@@ -179,6 +181,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                     display.draw_crosshair(sx, sy, 6, 0xff4444);
             } else if (!display.is_mouse_down() && !nkui.hit(mx, my) &&
                        !ui.is_save_dialog_active()) {
+                ui.customize_clear_hover();
                 HitRecord rec;
                 if (pick_at_mouse(grid, cam, display.width(), display.height(),
                                   mx, my, rec) && rec.hittable) {
@@ -188,8 +191,86 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
                         display.draw_crosshair(sx, sy, 6, 0x00ff00);
                 }
             }
+            // Hover-pick a gizmo axis (only when nothing is pressed so a drag
+            // cannot flip the constrained axis mid-motion).
+            if (!display.is_mouse_down())
+                ui.gizmo_axis(ui.gizmo_axis_at(mx, my, cam,
+                                               display.width(), display.height()));
+            // Unity-style axis gizmo on the selected object:
+            // red X right, green Y up, blue close+far depth line.
+            ui.draw_gizmo(display, cam);
+
+            // influence area preview: wireframe circle around the sculpt
+            // subdivide center, drawn in world units at the object's depth
+            if (ui.sculpt_center_valid()) {
+                Vec3 cc = ui.sculpt_center();
+                int sx, sy;
+                if (project_point(cam, display.width(), display.height(), cc, sx, sy)) {
+                    Vec3 rel = cc - cam.pos;
+                    double depth = dot(rel, cam.forward());
+                    if (depth > 0.05) {
+                        double f = depth * VIEWPORT_HEIGHT / (FOCAL_LENGTH * display.height());
+                        int r = (int)std::max(6.0, ui.subdivide_radius() * f);
+                        const double PI = 3.14159265358979323846;
+                        for (int a = 0; a < 36; a++) {
+                            double th1 = a * 2.0 * PI / 36.0;
+                            double th2 = (a + 1) * 2.0 * PI / 36.0;
+                            display.draw_line(sx + (int)(r * std::cos(th1)), sy + (int)(r * std::sin(th1)),
+                                              sx + (int)(r * std::cos(th2)), sy + (int)(r * std::sin(th2)), 0x00ffff);
+                        }
+                        display.draw_crosshair(sx, sy, 4, 0x00ffff);
+                    }
+                }
+            }
+
         }
-    };
+
+        // Influence-area preview: wireframe circle at the surface point under
+        // the cursor, in world units, showing the radius that the
+        // sculpt/customize function will affect. Runs in all render modes.
+        if (!display.is_mouse_down() && !nkui.hit(mx, my) &&
+            !ui.is_save_dialog_active()) {
+            HitRecord rec;
+            if (pick_at_mouse(grid, cam, display.width(), display.height(),
+                              mx, my, rec) && rec.hittable) {
+                auto draw_influence = [&](const Vec3& world, double radius,
+                                          unsigned col) {
+                    int cx, cy;
+                    if (!project_point(cam, display.width(), display.height(),
+                                       world, cx, cy))
+                        return;
+                    Vec3 rel = world - cam.pos;
+                    double depth = dot(rel, cam.forward());
+                    if (depth <= 0.05) return;
+                    double f = depth * VIEWPORT_HEIGHT /
+                               (FOCAL_LENGTH * (double)display.height());
+                    int r = (int)std::max(6.0, radius * f);
+                    const double PI =
+                        3.14159265358979323846;
+                    for (int a = 0; a < 36; a++) {
+                        double th1 = a * 2.0 * PI / 36.0;
+                        double th2 = (a + 1) * 2.0 * PI / 36.0;
+                        display.draw_line(cx + (int)(r * std::cos(th1)),
+                                          cy + (int)(r * std::sin(th1)),
+                                          cx + (int)(r * std::cos(th2)),
+                                          cy + (int)(r * std::sin(th2)),
+                                          col);
+                    }
+                    display.draw_crosshair(cx, cy, 4, col);
+                };
+
+                if (ui.is_sculpt_mode() &&
+                    dynamic_cast<SculptMesh*>(rec.hittable)) {
+                    draw_influence(rec.p, (double)ui.brush_radius(),
+                                   0x00ff00); // green: sculpt brush
+                } else if (auto* sm = dynamic_cast<Mesh*>(rec.hittable)) {
+                    ui.set_customize_center(rec.p);
+                    draw_influence(rec.p, ui.customize_radius(),
+                                   0x00ffff); // cyan: customize area
+                }
+            }
+        }
+        };
 
     // Per-frame animation application: keys + procedural offsets drive either
     // a free object, a grid cell occupant, or the camera pose.
@@ -356,6 +437,7 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
         // batched press+release cannot fire the same button twice.
         bool ui_click_pending = false;
         static bool gizmo_dragged = false;
+        static bool customize_dragged = false;
 
         if (display.mouse_clicked()) {
             int mx = display.mouse_x(), my = display.mouse_y();
@@ -363,14 +445,41 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             display.clear_mouse();
             if (nkui.hit(mx, my)) {
                 ui_click_pending = true;
-            } else if (btn == 1 && !ui.is_sculpt_mode() && ui.start_drag(mx, my)) {
-                gizmo_dragged = true;
-                render_and_ui();
-            } else if (btn == 3) {
-                // Right-click: quick-place the last used shape
-                if (ui.place_last_shape()) {
-                    autosave();
+            } else {
+                if (ui.render_mode() == MODE_OVERHEAD)
+                    overhead_view_click(display, btn, mx, my);
+                if (ui.sculpt_awaiting_center() && btn == 1) {
+                    HitRecord rec;
+                    if (pick_at_mouse(grid, cam, display.width(), display.height(),
+                                      mx, my, rec) && rec.hittable) {
+                        ui.set_sculpt_center(rec.p);
+                        ui.set_sculpt_awaiting_center(false);
+                        ui.show_msg("influence center set");
+                    }
                     render_and_ui();
+                } else if (btn == 1 && !ui.is_sculpt_mode()) {
+                    // Object customization drag: deform the hovered mesh in
+                    // place instead of moving it (gizmo drag).
+                    HitRecord crec;
+                    bool over_mesh = pick_at_mouse(grid, cam, display.width(),
+                                                   display.height(), mx, my,
+                                                   crec) && crec.hittable &&
+                                     dynamic_cast<Mesh*>(crec.hittable);
+                    if (over_mesh) {
+                        ui.set_customize_center(crec.p);
+                        ui.apply_customize_at(crec.p);
+                        customize_dragged = true;
+                        render_and_ui();
+                    } else if (ui.start_drag(mx, my)) {
+                        gizmo_dragged = true;
+                        render_and_ui();
+                    }
+                } else if (btn == 3) {
+                    // Right-click: quick-place the last used shape
+                    if (ui.place_last_shape()) {
+                        autosave();
+                        render_and_ui();
+                    }
                 }
             }
         }
@@ -383,44 +492,62 @@ void run_editor(Grid& grid, Camera& cam, DisplayWin& display,
             display.clear_mouse_delta();
         }
 
+        // --- Object customization drag: continuously deform the hovered
+        // mesh at the cursor (inflate/deflate/pull/push with area falloff) ---
+        if (customize_dragged && display.is_mouse_down()) {
+            HitRecord rec;
+            if (pick_at_mouse(grid, cam, display.width(), display.height(),
+                              display.mouse_x(), display.mouse_y(), rec) &&
+                rec.hittable && dynamic_cast<Mesh*>(rec.hittable)) {
+                ui.set_customize_center(rec.p);
+                ui.apply_customize_at(rec.p);
+                render_and_ui();
+            }
+            display.clear_mouse_delta();
+        }
+        if (!display.is_mouse_down()) {
+            gizmo_dragged = false;
+            customize_dragged = false;
+        }
+
         // --- Heightfield paint brush (Overhead mode) ---
         // Overhead looks straight down, so the mouse maps directly to the
-        // map rectangle; invert the to_screen() transform used there.
-        // Left-drag raises with the sidebar brush sliders; Shift lowers.
+        // map rectangle through the shared overhead view transform.
+        // Middle-drag or Space+left pans the map; plain left-drag raises
+        // with the sidebar brush sliders, Shift lowers.
         if (display.is_mouse_down() && ui.render_mode() == 2 &&
             !gizmo_dragged && !nkui.hit(display.mouse_press_x(), display.mouse_press_y())) {
-            auto* hf = dynamic_cast<HeightField*>(grid.terrain());
-            if (hf && !ui.is_save_dialog_active() && !ui.is_hmap_dialog_active()) {
-                int w = display.width(), h = display.height();
-                int pad = 60;
-                int map_w = w - pad * 2 - UI::SIDEBAR_W;
-                int map_h = h - pad * 2;
-                double cs = grid.cell_size;
-                double cell_px_x = (double)map_w / (grid.nx * cs);
-                double cell_px_y = (double)map_h / (grid.nz * cs);
-                double cell_px = std::min(cell_px_x, cell_px_y);
-                if (cell_px < 1) cell_px = 1;
-                double total_w = grid.nx * cs * cell_px;
-                double total_h = grid.nz * cs * cell_px;
-                int ox = pad + (int)((map_w - total_w) / 2);
-                int oy = pad + (int)((map_h - total_h) / 2);
-                int mx = display.mouse_x(), my = display.mouse_y();
-
-                if (mx >= ox && mx <= ox + total_w && my >= oy && my <= oy + total_h) {
-                    Vec3 gmin, gmax;
-                    grid.grid_bounds(gmin, gmax);
-                    double fx = (double)(mx - ox) / total_w;
-                    double fz = 1.0 - (double)(my - oy) / total_h;  // +z axis up
-                    double wx = gmin.x + fx * (gmax.x - gmin.x);
-                    double wz = gmin.z + fz * (gmax.z - gmin.z);
-                    bool shift_held = display.key_held(XK_Shift_L) ||
-                                      display.key_held(XK_Shift_R);
-                    double sgn = shift_held ? -1.0 : 1.0;
-                    hf->paint(wx, wz, ui.brush_radius(),
-                              sgn * (double)ui.brush_strength() * 0.6, 0);
-                    render_and_ui(2);
-                }
+            if (overhead_view_pan_tick(display, grid)) {
                 display.clear_mouse_delta();
+                render_and_ui(2);
+            } else {
+                auto* hf = dynamic_cast<HeightField*>(grid.terrain());
+                if (hf && !ui.is_save_dialog_active() && !ui.is_hmap_dialog_active()) {
+                    int mx = display.mouse_x(), my = display.mouse_y();
+                    if (overhead_map_contains(display, grid, mx, my)) {
+                        Vec3 w = overhead_world_at(display, grid, mx, my);
+                        bool shift_held = display.key_held(XK_Shift_L) ||
+                                          display.key_held(XK_Shift_R);
+                        double sgn = shift_held ? -1.0 : 1.0;
+                        hf->paint(w.x, w.z, ui.brush_radius(),
+                                  sgn * (double)ui.brush_strength() * 0.6, 0);
+                        render_and_ui(2);
+                    }
+                    display.clear_mouse_delta();
+                }
+            }
+        }
+
+        // --- Overhead wheel zoom (consumed in any mode, used in Overhead) ---
+        if (display.wheel_ticks()) {
+            int ticks = display.wheel_ticks();
+            display.clear_wheel();
+            if (ui.render_mode() == 2) {
+                for (int t = 0; t < (ticks > 0 ? ticks : -ticks); t++)
+                    overhead_view_zoom(grid, ticks > 0 ? 1 : -1,
+                                       display.mouse_x(), display.mouse_y(),
+                                       display);
+                render_and_ui();
             }
         }
 

@@ -169,6 +169,7 @@ bool HeightField::hit(const Ray& r, double t_min, double t_max, HitRecord& rec) 
 }
 
 void HeightField::paint(double x, double z, double radius, double amount, int mode) {
+    version_++;
     // Collect column indices in the disc around (x, z).
     int i0 = (int)((x - radius - origin_x_) / cell_);
     int k0 = (int)((z - radius - origin_z_) / cell_);

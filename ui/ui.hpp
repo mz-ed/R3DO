@@ -19,6 +19,7 @@ enum class ShapeType { SPHERE, BOX, CYLINDER, CONE, MESH };
 
 // State container + actions for the Nuklear-drawn panels.
 // All pixel drawing / hit-testing lives in nkui.cpp now.
+class Mesh;
 class UI {
 public:
     UI(Grid& grid, Camera& cam, DisplayWin& display, SculptEngine* sculpt = nullptr);
@@ -228,6 +229,77 @@ private:
 public:
     int mode_label_idx_ = 1;
 
+    // --- gizmo (Unity-style axis constraints at the selected object) ---
+    // gizmo_axis_: -1 off, 0 = X (screen right), 1 = Y (screen up),
+    //              2 = Z (depth close+far line through the object)
+    int gizmo_axis_ = -1;
+    bool gizmo_dragging_ = false;
+    int gizmo_axis() const { return gizmo_axis_; }
+    void gizmo_axis(int a) {
+        if (a < -1) a = -1;
+        if (a > 2) a = 2;
+        gizmo_axis_ = a;
+    }
+    Hittable* selected_obj() const;
+    int gizmo_axis_at(int mx, int my, const Camera& c, int w, int h);
+    void draw_gizmo(DisplayWin& d, const Camera& c);
+
+    // ---- sculpt-area modeling: subdivide polygons in an influence area ----
+    // falloff per vertex uses the same bone-influence technique (radius +
+    // sharp): subdivide_radius_ == 0 means unlimited reach (whole object)
+    double subdivide_radius_ = 0.5;
+    double subdivide_sharp_ = 2.0;
+    int subdivide_levels_ = 1;
+    bool subdivide_await_center_ = false;
+    Vec3 subdivide_center_;
+    bool subdivide_center_valid_ = false;
+    double subdivide_radius() const { return subdivide_radius_; }
+    void set_subdivide_radius(double r);
+    double subdivide_sharp() const { return subdivide_sharp_; }
+    void set_subdivide_sharp(double s);
+    int subdivide_levels() const { return subdivide_levels_; }
+    void set_subdivide_levels(int l);
+    bool sculpt_awaiting_center() const { return subdivide_await_center_; }
+    void set_sculpt_awaiting_center(bool v);
+    Vec3 sculpt_center() const { return subdivide_center_; }
+    bool sculpt_center_valid() const { return subdivide_center_valid_; }
+    void set_sculpt_center(const Vec3& p);
+    Mesh* selected_mesh();
+    double mesh_scale_ = 1.0;
+    double mesh_scale_prev_ = 1.0;
+    int mesh_scale_sel_ = -1;
+    double mesh_scale() const { return mesh_scale_; }
+    void set_mesh_scale(double s);
+    void subdivide_selected_area();
+
+    // ---- object customization: area-of-affection deformation (bone-style
+    // radius + sharp falloff around a hover center) ----
+    enum { CUSTOMIZE_INFLATE = 0, CUSTOMIZE_DEFLATE = 1,
+           CUSTOMIZE_PULL = 2, CUSTOMIZE_PUSH = 3 };
+    int customize_mode_ = CUSTOMIZE_INFLATE;
+    double customize_radius_ = 0.4;
+    double customize_sharp_ = 2.0;
+    double customize_strength_ = 0.08;
+    bool customize_hover_ = false;
+    Vec3 customize_center_;
+    int customize_mode() const { return customize_mode_; }
+    void set_customize_mode(int m) {
+        if (m >= CUSTOMIZE_INFLATE && m <= CUSTOMIZE_PUSH) customize_mode_ = m;
+    }
+    double customize_radius() const { return customize_radius_; }
+    void set_customize_radius(double r) { if (r >= 0.0) customize_radius_ = r; }
+    double customize_sharp() const { return customize_sharp_; }
+    void set_customize_sharp(double s) { if (s > 0.0) customize_sharp_ = s; }
+    double customize_strength() const { return customize_strength_; }
+    void set_customize_strength(double s) { if (s >= 0.0) customize_strength_ = s; }
+    bool customize_hovering() const { return customize_hover_; }
+    void set_customize_hovering(bool v) { customize_hover_ = v; }
+    Vec3 customize_center() const { return customize_center_; }
+    void set_customize_center(const Vec3& p) { customize_center_ = p; customize_hover_ = true; }
+    void customize_clear_hover() { customize_hover_ = false; }
+    void apply_customize_at(const Vec3& center);
+    void show_msg(const char* msg);
+
 private:
     char save_msg_[64] = {0};
     double save_msg_until_ = 0;
@@ -255,6 +327,7 @@ private:
         bool was_cell = false;
         bool undo_saved = false; // undo snapshot fires on first real motion
         int ci = 0, cj = 0, ck = 0;
+        int mx0 = 0, my0 = 0; // last screen pos (gizmo axis drag reference)
     };
     DragState drag_;
 
@@ -305,7 +378,6 @@ private:
     Vec3 palette_color(int index) const;
     bool try_place(ShapeType type);
     void push_undo();
-    void show_msg(const char* msg);
     void scan_meshes();
 };
 

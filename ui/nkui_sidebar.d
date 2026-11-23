@@ -4,7 +4,7 @@ ui/nkui_sidebar.o: ui/nkui_sidebar.cpp ui/nkui.hpp \
  src/hittable.hpp shapes/mesh.hpp src/camera.hpp src/display.hpp \
  modes/render_modes.hpp sculpt/sculpt_engine.hpp sculpt/sculpt_mesh.hpp \
  sculpt/brush.hpp src/ray.hpp shapes/heightfield.hpp anim/animation.hpp \
- sculpt/brush.hpp
+ sculpt/brush.hpp shapes/mesh.hpp
 ui/nkui.hpp:
 vendor/nuklear/nuklear.h:
 ui/ui.hpp:
@@ -27,3 +27,4 @@ src/ray.hpp:
 shapes/heightfield.hpp:
 anim/animation.hpp:
 sculpt/brush.hpp:
+shapes/mesh.hpp:

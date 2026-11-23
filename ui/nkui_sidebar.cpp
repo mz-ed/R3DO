@@ -6,6 +6,7 @@
 #pragma GCC diagnostic pop
 #include "ui.hpp"
 #include "brush.hpp"
+#include "shapes/mesh.hpp"
 #include "hittable.hpp"
 #include <cstdio>
 #include <cstring>
@@ -110,6 +111,28 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
 
         nk_layout_row_dynamic(ctx_, 24, 1);
         if (nk_button_label(ctx_, "Remesh")) ui.do_remesh();
+
+        nk_spacing(ctx_, 1);
+        nk_layout_row_dynamic(ctx_, 16, 1);
+        nk_label(ctx_, "subdivide area (influence falloff)", NK_TEXT_LEFT);
+        nk_layout_row_dynamic(ctx_, 24, 1);
+        if (nk_button_label(ctx_, "Set Center")) {
+            ui.set_sculpt_awaiting_center(true);
+            ui.show_msg("click on the object to place the influence center");
+        }
+        nk_layout_row_dynamic(ctx_, 20, 1);
+        float srad = (float)ui.subdivide_radius();
+        if (nk_slider_float(ctx_, 0.05f, &srad, 5.0f, 0.05f)) ui.set_subdivide_radius(srad);
+        nk_layout_row_dynamic(ctx_, 16, 1);
+        { char lbl[64]; snprintf(lbl, sizeof(lbl), "radius: %.2f  (0 = whole object)", (double)srad);
+          nk_label(ctx_, lbl, NK_TEXT_LEFT); }
+        nk_layout_row_dynamic(ctx_, 20, 1);
+        float ssh = (float)ui.subdivide_sharp();
+        if (nk_slider_float(ctx_, 0.5f, &ssh, 8.0f, 0.25f)) ui.set_subdivide_sharp(ssh);
+        nk_layout_row_dynamic(ctx_, 16, 1);
+        { char lbl[64]; snprintf(lbl, sizeof(lbl), "sharp: %.2f", (double)ssh); nk_label(ctx_, lbl, NK_TEXT_LEFT); }
+        nk_layout_row_dynamic(ctx_, 24, 1);
+        if (nk_button_label(ctx_, "Subdivide Area")) ui.subdivide_selected_area();
     }
 
     nk_spacing(ctx_, 1);
@@ -266,6 +289,62 @@ void NkUI::draw_sidebar(UI& ui, int ww, int wh) {
             if (nk_button_label(ctx_, "-Z")) { ui.move_selected(Vec3(0, 0, -0.5)); }
             if (nk_button_label(ctx_, "+Y")) { ui.move_selected(Vec3(0, 0.5, 0)); }
             if (nk_button_label(ctx_, "-Y")) { ui.move_selected(Vec3(0, -0.5, 0)); }
+
+            // size adjustment for OBJ meshes
+            Mesh* sm = ui.selected_mesh();
+            if (sm) {
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                nk_label(ctx_, "size", NK_TEXT_LEFT);
+                nk_layout_row_dynamic(ctx_, 24, 1);
+                float sc = (float)ui.mesh_scale();
+                if (nk_slider_float(ctx_, 0.1f, &sc, 5.0f, 0.05f)) ui.set_mesh_scale(sc);
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                { char lbl[64]; snprintf(lbl, sizeof(lbl), "scale: %.2f x", (double)sc);
+                  nk_label(ctx_, lbl, NK_TEXT_LEFT); }
+            }
+
+            // object customization: area-of-affection deformation around the
+            // hover center, using the same bone-influence falloff (radius +
+            // sharp). Hover a mesh to see the influence circle, then left-drag
+            // over it to deform.
+            {
+                static const char* cmnames[4] = { "Inflate", "Deflate", "Pull", "Push" };
+                int cm = ui.customize_mode();
+                nk_layout_row_dynamic(ctx_, 20, 1);
+                nk_label(ctx_, "customize mode", NK_TEXT_LEFT);
+                nk_layout_row_dynamic(ctx_, 24, 1);
+                if (nk_combo_begin_label(ctx_, cmnames[cm],
+                                         nk_vec2((float)UI::SIDEBAR_W - 30, 160))) {
+                    nk_layout_row_dynamic(ctx_, 18, 1);
+                    for (int i = 0; i < 4; i++)
+                        if (nk_combo_item_label(ctx_, cmnames[i], NK_TEXT_LEFT))
+                            ui.set_customize_mode(i);
+                    nk_combo_end(ctx_);
+                }
+                nk_layout_row_dynamic(ctx_, 20, 1);
+                float cr = (float)ui.customize_radius();
+                if (nk_slider_float(ctx_, 0.05f, &cr, 5.0f, 0.05f))
+                    ui.set_customize_radius(cr);
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                { char lbl[64]; snprintf(lbl, sizeof(lbl), "radius: %.2f  (0 = whole object)",
+                                         (double)cr); nk_label(ctx_, lbl, NK_TEXT_LEFT); }
+                nk_layout_row_dynamic(ctx_, 20, 1);
+                float csh = (float)ui.customize_sharp();
+                if (nk_slider_float(ctx_, 0.5f, &csh, 8.0f, 0.25f))
+                    ui.set_customize_sharp(csh);
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                { char lbl[64]; snprintf(lbl, sizeof(lbl), "sharp: %.2f", (double)csh);
+                  nk_label(ctx_, lbl, NK_TEXT_LEFT); }
+                nk_layout_row_dynamic(ctx_, 20, 1);
+                float cs = (float)ui.customize_strength();
+                if (nk_slider_float(ctx_, 0.01f, &cs, 2.0f, 0.01f))
+                    ui.set_customize_strength(cs);
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                { char lbl[64]; snprintf(lbl, sizeof(lbl), "strength: %.2f", (double)cs);
+                  nk_label(ctx_, lbl, NK_TEXT_LEFT); }
+                nk_layout_row_dynamic(ctx_, 16, 1);
+                nk_label(ctx_, "hover a mesh, then left-drag over it", NK_TEXT_LEFT);
+            }
 
             // Shared world position: drag, move buttons and the animation
             // panel all flow through the same live base. Editing here moves

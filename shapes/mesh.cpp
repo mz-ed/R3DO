@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <unordered_map>
 
 #ifdef __SSE2__
 #include <xmmintrin.h>
@@ -465,6 +466,193 @@ void Mesh::translate(const Vec3& d) {
     triangles_ = std::move(tris);
     build_sah(triangles_, 0, (int)triangles_.size());
     build_soa();
+}
+
+// Scale the mesh about its object-space center (keeps the cell/home base in
+// place; anim_offset is untouched). Rebuilds the BVH and SoA packets.
+void Mesh::scale(const Vec3& s) {
+    if (triangles_.empty() || nodes_.empty()) return;
+    Vec3 c((nodes_[0].bmin[0] + nodes_[0].bmax[0]) * 0.5,
+           (nodes_[0].bmin[1] + nodes_[0].bmax[1]) * 0.5,
+           (nodes_[0].bmin[2] + nodes_[0].bmax[2]) * 0.5);
+    for (auto& t : triangles_) {
+        t.v0 = c + Vec3((t.v0.x - c.x) * s.x, (t.v0.y - c.y) * s.y, (t.v0.z - c.z) * s.z);
+        t.v1 = c + Vec3((t.v1.x - c.x) * s.x, (t.v1.y - c.y) * s.y, (t.v1.z - c.z) * s.z);
+        t.v2 = c + Vec3((t.v2.x - c.x) * s.x, (t.v2.y - c.y) * s.y, (t.v2.z - c.z) * s.z);
+    }
+    if (bind_) {
+        for (auto& t : bind_->tris) {
+            t.v0 = c + Vec3((t.v0.x - c.x) * s.x, (t.v0.y - c.y) * s.y, (t.v0.z - c.z) * s.z);
+            t.v1 = c + Vec3((t.v1.x - c.x) * s.x, (t.v1.y - c.y) * s.y, (t.v1.z - c.z) * s.z);
+            t.v2 = c + Vec3((t.v2.x - c.x) * s.x, (t.v2.y - c.y) * s.y, (t.v2.z - c.z) * s.z);
+        }
+    }
+    rebuild_bvh();
+}
+
+namespace {
+// Split one triangle into 4 by edge midpoints; `lv` recursion levels.
+void subdivide_tri(const Triangle& t, int lv, std::vector<Triangle>& out) {
+    if (lv <= 0) { out.push_back(t); return; }
+    Vec3 m01 = (t.v0 + t.v1) * 0.5;
+    Vec3 m12 = (t.v1 + t.v2) * 0.5;
+    Vec3 m20 = (t.v2 + t.v0) * 0.5;
+    subdivide_tri(Triangle{t.v0, m01, m20}, lv - 1, out);
+    subdivide_tri(Triangle{m01, t.v1, m12}, lv - 1, out);
+    subdivide_tri(Triangle{m20, m12, t.v2}, lv - 1, out);
+    subdivide_tri(Triangle{m01, m12, m20}, lv - 1, out);
+}
+} // namespace
+
+// Subdivide triangles in the area around `center`. Per-vertex falloff uses
+// the same bone-influence technique (radius + sharp): a triangle subdivides
+// when any of its corners is inside the influence radius, which keeps shared
+// edges watertight (no T-junctions). `levels` = subdivision passes (1 -> 4x).
+void Mesh::subdivide_area(const Vec3& center, double radius, double sharp, int levels) {
+    if (triangles_.empty() || levels < 1) return;
+    auto falloff = [&](double d) -> double {
+        if (radius <= 1e-6) return 1.0; // unlimited reach, like bones
+        double t = 1.0 - d / radius;
+        if (t <= 0.0) return 0.0;
+        return std::pow(t, sharp);
+    };
+    std::vector<Triangle> out;
+    out.reserve(triangles_.size() * 4);
+    for (const auto& t : triangles_) {
+        double w0 = falloff((t.v0 - center).length());
+        double w1 = falloff((t.v1 - center).length());
+        double w2 = falloff((t.v2 - center).length());
+        double mw = std::max({w0, w1, w2});
+        subdivide_tri(t, mw >= 0.5 ? 1 : 0, out);
+    }
+    triangles_ = std::move(out);
+    if (skeleton_ && bind_) bind_skeleton(skeleton_mut());
+    rebuild_bvh();
+}
+
+// Same bone-influence falloff used by the skeleton system: pow(max(0,1-d/r),
+// sharp), with radius <= 0 meaning unlimited reach (weight 1.0 everywhere).
+static double mesh_influence_falloff(double d, double radius, double sharp) {
+    if (radius <= 1e-6) return 1.0;
+    double t = 1.0 - d / radius;
+    if (t <= 0.0) return 0.0;
+    return std::pow(t, sharp);
+}
+
+namespace {
+struct Vec3Hash {
+    size_t operator()(const Vec3& v) const noexcept {
+        size_t h = std::hash<double>()(v.x);
+        h ^= std::hash<double>()(v.y) + 0x9e3779b9u + (h << 6) + (h >> 2);
+        h ^= std::hash<double>()(v.z) + 0x9e3779b9u + (h << 6) + (h >> 2);
+        return h;
+    }
+};
+struct Vec3Eq {
+    bool operator()(const Vec3& a, const Vec3& b) const noexcept {
+        return a.x == b.x && a.y == b.y && a.z == b.z;
+    }
+};
+} // namespace
+
+// Mesh "area of affection" customization: displaces vertices within `radius`
+// of `center` using bone-style falloff (radius + sharp). Modes:
+//   0 Inflate  - push out along averaged vertex normal
+//   1 Deflate  - pull in along averaged vertex normal
+//   2 Pull     - move toward center
+//   3 Push     - move away from center
+// `strength` is world units per frame at full weight.
+// Vertices are de-duplicated exactly (shared corners are bitwise-identical
+// copies) so the mesh stays watertight.
+void Mesh::customize(const Vec3& center, double radius, double sharp,
+                     double strength, int mode) {
+    if (triangles_.empty()) return;
+
+    // De-duplicate shared corners exactly so displacement stays watertight.
+    std::vector<Vec3> uv;
+    std::vector<int> remap;
+    remap.reserve(triangles_.size() * 3);
+    {
+        std::unordered_map<Vec3, int, Vec3Hash, Vec3Eq> index;
+        index.reserve(triangles_.size() * 3);
+        for (const auto& t : triangles_) {
+            Vec3 c[3] = {t.v0, t.v1, t.v2};
+            for (int k = 0; k < 3; k++) {
+                auto it = index.find(c[k]);
+                int vi;
+                if (it == index.end()) {
+                    vi = (int)uv.size();
+                    uv.push_back(c[k]);
+                    index.emplace(c[k], vi);
+                } else {
+                    vi = it->second;
+                }
+                remap.push_back(vi);
+            }
+        }
+    }
+
+    // Vertex normals: average of adjacent face normals (uniform weight).
+    std::vector<Vec3> norm(uv.size(), Vec3(0, 0, 0));
+    for (size_t ti = 0; ti < triangles_.size(); ti++) {
+        const Triangle& t = triangles_[ti];
+        Vec3 e1 = t.v1 - t.v0;
+        Vec3 e2 = t.v2 - t.v0;
+        Vec3 fn = cross(e1, e2);
+        double len = fn.length();
+        if (len > 1e-12) fn = fn * (1.0 / len);
+        int ids[3] = {remap[(size_t)ti * 3 + 0], remap[(size_t)ti * 3 + 1],
+                      remap[(size_t)ti * 3 + 2]};
+        for (int k = 0; k < 3; k++) norm[(size_t)ids[k]] = norm[(size_t)ids[k]] + fn;
+    }
+    for (auto& n : norm) {
+        double l = n.length();
+        if (l > 1e-12) n = n * (1.0 / l);
+        else n = Vec3(0, 1, 0);
+    }
+
+    // Displace unique vertices by falloff-weighted direction.
+    for (size_t i = 0; i < uv.size(); i++) {
+        double d = (uv[i] - center).length();
+        double w = mesh_influence_falloff(d, radius, sharp);
+        if (w <= 0.0) continue;
+        Vec3 dir;
+        switch (mode) {
+        case 0: dir = norm[i];                      // Inflate
+            break;
+        case 1: dir = norm[i] * -1.0;               // Deflate
+            break;
+        case 2: dir = center - uv[i];               // Pull toward center
+            if (dir.length() > 1e-12) dir = dir * (1.0 / dir.length());
+            else dir = Vec3(0, 0, 0);
+            break;
+        case 3: dir = uv[i] - center;               // Push away from center
+            if (dir.length() > 1e-12) dir = dir * (1.0 / dir.length());
+            else dir = Vec3(0, 0, 0);
+            break;
+        default: dir = norm[i];
+            break;
+        }
+        uv[i] = uv[i] + dir * (strength * w);
+    }
+
+    // Write displaced vertices back into triangles (watertight: shared corners
+    // share a uv index so they move identically).
+    for (size_t ti = 0; ti < triangles_.size(); ti++) {
+        Triangle& t = triangles_[ti];
+        t.v0 = uv[remap[(size_t)ti * 3 + 0]];
+        t.v1 = uv[remap[(size_t)ti * 3 + 1]];
+        t.v2 = uv[remap[(size_t)ti * 3 + 2]];
+    }
+    if (bind_) {
+        for (size_t ti = 0; ti < bind_->tris.size(); ti++) {
+            Triangle& t = bind_->tris[ti];
+            t.v0 = uv[remap[(size_t)ti * 3 + 0]];
+            t.v1 = uv[remap[(size_t)ti * 3 + 1]];
+            t.v2 = uv[remap[(size_t)ti * 3 + 2]];
+        }
+    }
+    rebuild_bvh();
 }
 
 // ---- skeleton support ----

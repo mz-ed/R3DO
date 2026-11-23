@@ -73,7 +73,10 @@ private:
     int n_;              // columns per side
     double cell_;        // world units per column
     std::vector<float> h_; // n_ * n_ column heights (world y at centers)
+    unsigned version_ = 0; // bumped on every height edit (view caches)
 
+public:
+    unsigned version() const { return version_; }
     std::pair<double, double> march_bounds(const Ray& r, double t_min,
                                            double t_max) const;
     Vec3 normal_at(double x, double z) const;

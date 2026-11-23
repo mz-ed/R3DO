@@ -230,6 +230,10 @@ void DisplayWin::process_events() {
             break;
         }
         case ButtonPress:
+            if (e.xbutton.button == 4 || e.xbutton.button == 5) {
+                wheel_ticks_ += (e.xbutton.button == 4) ? 1 : -1;
+                break;
+            }
             mouse_x_ = e.xbutton.x;
             mouse_y_ = e.xbutton.y;
             mouse_button_ = e.xbutton.button;
@@ -242,6 +246,7 @@ void DisplayWin::process_events() {
             mouse_dy_ = 0;
             break;
         case ButtonRelease:
+            if (e.xbutton.button == 4 || e.xbutton.button == 5) break;
             mouse_down_ = false;
             mouse_released_ = true;
             break;

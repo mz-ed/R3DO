@@ -3,6 +3,7 @@
 
 #include "hittable.hpp"
 #include <vector>
+#include <cmath>
 
 struct Triangle {
     Vec3 v0, v1, v2;
@@ -27,6 +28,14 @@ public:
     void set_path(const std::string& p) { path_ = p; }
     Vec3 get_center() const override;
     void translate(const Vec3& d) override;
+    void scale(const Vec3& s); // per-axis scale about the object center
+    // subdivide triangles in the area around center; per-vertex falloff uses
+    // the same bone-influence technique (radius + sharp); level 1 = 4x polys
+    void subdivide_area(const Vec3& center, double radius, double sharp, int levels = 1);
+    // Area-of-affection mesh customization (bone-style radius+sharp falloff).
+    // mode: 0 Inflate 1 Deflate 2 Pull 3 Push.
+    void customize(const Vec3& center, double radius, double sharp,
+                   double strength, int mode);
     bool hit(const Ray& r, double t_min, double t_max, HitRecord& rec) const override;
 
     std::vector<Triangle>& get_triangles() { return triangles_; }
@@ -45,6 +54,12 @@ public:
     int bone_bound_count(int bone) const override;
     bool bone_bound_vert(int bone, int idx, Vec3& out) const override;
     double stretch_cap() const override { return stretch_cap_; }
+    double bound_radius_xz() const override {
+        if (nodes_.empty()) return 0.28;
+        double dx = nodes_[0].bmax[0] - nodes_[0].bmin[0];
+        double dz = nodes_[0].bmax[2] - nodes_[0].bmin[2];
+        return 0.5 * std::sqrt(dx * dx + dz * dz);
+    }
 
     struct FlatNode {
         float bmin[3], bmax[3];

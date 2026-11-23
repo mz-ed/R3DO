@@ -5,7 +5,8 @@ ui/ui.o: ui/ui.cpp ui/ui.hpp src/v3.hpp src/grid.hpp src/hittable.hpp \
  src/ray.hpp shapes/heightfield.hpp anim/animation.hpp src/saver.hpp \
  src/grid.hpp src/camera.hpp shapes/sphere.hpp shapes/cylinder.hpp \
  shapes/cone.hpp shapes/obj_loader.hpp shapes/mesh.hpp \
- sculpt/sculpt_mesh.hpp src/render.hpp src/display.hpp
+ sculpt/sculpt_mesh.hpp shapes/mesh.hpp src/render.hpp src/display.hpp \
+ modes/overhead/pick.hpp
 ui/ui.hpp:
 src/v3.hpp:
 src/grid.hpp:
@@ -34,5 +35,7 @@ shapes/cone.hpp:
 shapes/obj_loader.hpp:
 shapes/mesh.hpp:
 sculpt/sculpt_mesh.hpp:
+shapes/mesh.hpp:
 src/render.hpp:
 src/display.hpp:
+modes/overhead/pick.hpp:

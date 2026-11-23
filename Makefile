@@ -5,14 +5,16 @@ LDFLAGS   = -lX11 -lXext -lpthread
 
 # One -I per source folder: includes stay bare ("v3.hpp") so moving files
 # between folders never touches include statements.
-INC       = -I. -Isrc -Ianim -Ishapes -Imodes -Iui -Isculpt
+INC       = -I. -Isrc -Ianim -Ishapes -Imodes -Imodes/overhead -Iui -Isculpt
 
 SRCS = src/main.cpp src/display.cpp src/render.cpp src/saver.cpp src/settings.cpp \
        anim/animation.cpp anim/skeleton.cpp \
        shapes/mesh.cpp shapes/obj_loader.cpp shapes/heightfield.cpp \
        sculpt/sculpt_mesh.cpp sculpt/sculpt_engine.cpp sculpt/sculpt_io.cpp sculpt/sculpt_ui.cpp \
        ui/ui.cpp ui/nkui_core.cpp ui/nkui_sidebar.cpp ui/nkui_anim.cpp ui/startscreen.cpp \
-       modes/modes.cpp modes/billboard.cpp modes/overhead.cpp modes/bones.cpp modes/static.cpp
+       modes/modes.cpp modes/billboard.cpp modes/overhead.cpp modes/bones.cpp modes/static.cpp \
+       modes/overhead/view.cpp modes/overhead/terrain.cpp \
+       modes/overhead/markers.cpp modes/overhead/pick.cpp
 OBJS = $(SRCS:.cpp=.o)
 DEPS = $(OBJS:.o=.d)
 BIN  = R3DO

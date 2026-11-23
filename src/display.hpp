@@ -27,6 +27,7 @@ class DisplayWin {
     int mouse_button_ = 0;
     bool mouse_clicked_ = false;
     bool mouse_down_ = false, mouse_released_ = false;
+    int wheel_ticks_ = 0;
     XFontStruct* font_;
 
     // MIT-SHM shared-memory framebuffer
@@ -67,6 +68,8 @@ public:
     bool mouse_clicked() const { return mouse_clicked_; }
     bool is_mouse_down() const { return mouse_down_; }
     bool mouse_released() const { return mouse_released_; }
+    int wheel_ticks() const { return wheel_ticks_; }
+    void clear_wheel() { wheel_ticks_ = 0; }
     void clear_mouse() { mouse_clicked_ = false; }
     void clear_mouse_delta() { mouse_dx_ = 0; mouse_dy_ = 0; }
     void clear_mouse_released() { mouse_released_ = false; }
@@ -91,6 +94,7 @@ public:
     Window xwindow() const { return w; }
     XFontStruct* xfont() const { return font_; }
     void set_event_hook(std::function<void(XEvent&)> hook) { event_hook_ = hook; }
+    void ensure_xinput2_scroll(); // register XI_Scroll on the window
     void grab_pointer();
     void ungrab_pointer();
 
