@@ -117,8 +117,13 @@ void NkUI::end_frame() {
 
 void NkUI::render() {
     if (!ctx_ || !hooked_) return;
+    if (panel_n_ <= 0) {
+        nk_clear(ctx_);
+        return;
+    }
     nk_xlib_set_blit_rects(panel_n_, px_, py_, pw_, ph_);
     nk_xlib_render(win_, nk_rgb(30, 30, 30));
+    XFlush(dpy_);
 }
 
 bool NkUI::hit(int mx, int my) const {
@@ -181,6 +186,7 @@ void NkUI::draw(UI& ui, Animator& anim, Camera& cam,
             int x = (int)w->bounds.x, y = (int)w->bounds.y;
             int wdd = (int)w->bounds.w, hgt = (int)w->bounds.h;
             expand(x, y, wdd, hgt, ww, wh, 4);
+            if (wdd <= 0 || hgt <= 0) continue;
             px_[panel_n_] = x; py_[panel_n_] = y; pw_[panel_n_] = wdd; ph_[panel_n_] = hgt;
             panel_n_++;
         }

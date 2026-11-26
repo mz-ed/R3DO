@@ -12,7 +12,7 @@ void render_billboard(Grid& grid, Camera& cam, DisplayWin& display, const Vec3& 
     Vec3 rgt = cam.right();
     Vec3 up = cross(rgt, fwd);
 
-    display.fill_rect(0, 0, w, h, 0x0d0d1a);
+    display.clear_framebuffer(0x0d0d1a);
 
     struct Sprite {
         int sx, sy, rad;
@@ -126,6 +126,4 @@ void render_billboard(Grid& grid, Camera& cam, DisplayWin& display, const Vec3& 
         }
         }
     }
-
-    display.update();
 }

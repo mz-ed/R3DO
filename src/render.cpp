@@ -124,9 +124,8 @@ static unsigned int to_rgb(const Vec3& color) {
     return ((unsigned)ir << 16) | ((unsigned)ig << 8) | (unsigned)ib;
 }
 
-// --- Skip-rect / block state (set per frame by the editor) ---
+// --- Skip-rect state (set per frame by the editor) ---
 static std::vector<RenderSkip> g_skip;
-static int g_block = 1;
 
 static bool covered(int x, int y) {
     for (const RenderSkip& r : g_skip)
@@ -144,12 +143,9 @@ static void render_tile(const Grid& grid, const ViewBasis& b, DisplayWin& displa
     int y0 = ty * tile_size;
     int x1 = std::min(x0 + tile_size, image_width);
     int y1 = std::min(y0 + tile_size, image_height);
-    int block = g_block > 1 ? g_block : 1;
-    for (int j = y0; j < y1; j += block) {
+    for (int j = y0; j < y1; j++) {
         double v = 1.0 - (double)j / (image_height - 1);
-        int jh = std::min(block, y1 - j);
-        for (int i = x0; i < x1; i += block) {
-            int iw = std::min(block, x1 - i);
+        for (int i = x0; i < x1; i++) {
             Vec3 color;
             for (int s = 0; s < samples; s++) {
                 double u_off = (s % 2) * 0.5 + 0.25;
@@ -160,16 +156,8 @@ static void render_tile(const Grid& grid, const ViewBasis& b, DisplayWin& displa
                 color += ray_color(r, grid, light);
             }
             unsigned int c = to_rgb(color / samples);
-            // Chunky block write; covered pixels (UI panels) keep their
-            // previous content so nothing under the panels is erased.
-            if (block == 1 && samples == 1 && g_skip.empty()) {
+            if (!covered(i, j))
                 display.set_pixel(i, j, c);
-                continue;
-            }
-            for (int dy = 0; dy < jh; dy++)
-                for (int dx = 0; dx < iw; dx++)
-                    if (!covered(i + dx, j + dy))
-                        display.set_pixel(i + dx, j + dy, c);
         }
     }
 }
@@ -183,25 +171,7 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
     Vec3 light = unit_vector(light_dir);
     Vec3 origin = cam.pos;
 
-    // Phase 1: coarse preview (1 sample, stride ~120 pixels across).
-    // Skipped rects are left untouched so the UI never flickers.
-    int stride = std::max(1, std::min(image_width, image_height) / 120);
-    for (int j = 0; j < image_height; j += stride) {
-        double v = 1.0 - (double)j / (image_height - 1);
-        for (int i = 0; i < image_width; i += stride) {
-            double u = (double)i / (image_width - 1);
-            Ray r(origin, b.lower_left + u * b.horizontal + v * b.vertical - origin);
-            unsigned int c = to_rgb(ray_color(r, grid, light));
-            for (int dy = 0; dy < stride && j + dy < image_height; dy++)
-                for (int dx = 0; dx < stride && i + dx < image_width; dx++)
-                    if (!covered(i + dx, j + dy))
-                        display.set_pixel(i + dx, j + dy, c);
-        }
-    }
-    display.update();
-    display.process_events();
-
-    // Phase 2: full-quality tiled render via thread pool
+    // Full-quality tiled render via thread pool
     const int TILE = 64;
     int tiles_x = (image_width + TILE - 1) / TILE;
     int tiles_y = (image_height + TILE - 1) / TILE;
@@ -218,15 +188,11 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
         }
     }
 
-    // Main thread: pump X11 events while tiles render
+    // Main thread: show progress while tiles render
     auto last_update = std::chrono::steady_clock::now();
     while (tiles_done < total_tiles) {
-        display.process_events();
-        if (display.is_closed()) break;
-
         auto now = std::chrono::steady_clock::now();
         if (now - last_update >= std::chrono::milliseconds(32)) {
-            display.update();
             int pct = 100 * (int)tiles_done / total_tiles;
             std::cout << "\rRaytracing: " << pct << "% " << std::flush;
             last_update = now;
@@ -235,13 +201,11 @@ void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
     }
 
     pool().wait_idle();
-    display.update();
     std::cout << "\r              \r" << std::flush;
 }
 
-void set_render_view(const std::vector<RenderSkip>* skip, int block) {
+void set_render_view(const std::vector<RenderSkip>* skip) {
     g_skip = skip ? *skip : std::vector<RenderSkip>();
-    g_block = block > 1 ? block : 1;
 }
 
 // --- Picking helpers ---

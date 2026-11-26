@@ -12,5 +12,4 @@ void static_mode(Grid&, Camera&, DisplayWin& display, const Vec3&, int) {
             display.set_pixel(i, j, c);
         }
     }
-    display.update();
 }

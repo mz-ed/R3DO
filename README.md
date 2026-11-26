@@ -209,6 +209,23 @@ make -j4
 - **Multi-sampling**: low quality (1 sample/px) during movement; full quality
   (4 samples/px) on Space per `settings.cfg`.
 
+## UI compositing
+
+The scene and both Nuklear panels share one X11 window. An earlier build let
+render modes clear or push the window directly while `present()` blitted the
+panels before the framebuffer update. Any full-window fill or late `XPutImage`
+then erased the sidebar and animation panel, producing a one-frame blink every
+frame in every render mode.
+
+Compositing is now owned by `present()` in `src/main.cpp`: render to the
+framebuffer only, `display.update()` with panel skip rects, `nkui.render()` to
+blit panels last, then overlay crosshairs/gizmos guarded by `nkui.hit()`.
+Full-screen previews use `DisplayWin::clear_framebuffer()` instead of
+`fill_rect()`; duplicate `display.update()` calls were removed from
+`src/render.cpp` and the Billboard/Overhead/Static modes; degenerate panel rects
+are dropped in `ui/nkui_core.cpp`, and the Nuklear blit is flushed. Verified in
+the last build with `make -j2` and an editor smoke test: panels no longer flash.
+
 ## Files
 
 Sources live in six folders (`src/`, `anim/`, `shapes/`, `modes/`, `sculpt/`,

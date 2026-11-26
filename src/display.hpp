@@ -75,6 +75,7 @@ public:
     void clear_mouse_released() { mouse_released_ = false; }
 
     void set_pixel(int x, int y, unsigned int rgb);
+    void clear_framebuffer(unsigned int rgb);
     void update();
     // Push only the framebuffer regions OUTSIDE the given rects (the Nuklear
     // panels live directly on the window and would otherwise be wiped).

@@ -19,9 +19,9 @@ Vec3 ray_color(const Ray& r, const Grid& grid, const Vec3& light);
 struct RenderSkip { int x, y, w, h; };
 
 // Set the view state the raytracer honours: `skip` rects keep UI pixels
-// alive; `block` > 1 renders a cheap chunky preview (one ray per block)
-// for fast motion frames. `render_scene` uses whatever state was set last.
-void set_render_view(const std::vector<RenderSkip>* skip, int block);
+// alive (they're blitted over by Nuklear). The renderer always draws at
+// full resolution; there is no legacy low-res block preview.
+void set_render_view(const std::vector<RenderSkip>* skip);
 
 void render_scene(const Grid& grid, const Camera& cam, DisplayWin& display,
                   int image_width, int image_height, int samples,

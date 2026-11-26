@@ -123,6 +123,10 @@ void DisplayWin::set_pixel(int x, int y, unsigned int rgb) {
     data_[y * width_ + x] = rgb;
 }
 
+void DisplayWin::clear_framebuffer(unsigned int rgb) {
+    std::fill(data_, data_ + (size_t)width_ * height_, rgb);
+}
+
 void DisplayWin::set_update_skip(const int* xs, const int* ys, const int* ws, const int* hs, int n) {
     if (n > MAX_SKIP) n = MAX_SKIP;
     for (int i = 0; i < n; i++) {

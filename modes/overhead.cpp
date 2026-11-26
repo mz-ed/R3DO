@@ -6,7 +6,7 @@
 
 void render_overhead(Grid& grid, Camera& cam, DisplayWin& display) {
     int w = display.width(), h = display.height();
-    display.fill_rect(0, 0, w, h, 0x0d0d1a);
+    display.clear_framebuffer(0x0d0d1a);
 
     OverScreenMap map = overhead_build_map(display, grid);
     double cs = grid.cell_size;
@@ -44,6 +44,4 @@ void render_overhead(Grid& grid, Camera& cam, DisplayWin& display) {
     Vec3 fwd = cam.forward();
     auto fp = map.to_screen(cam.pos.x + fwd.x * cs * 2, cam.pos.z + fwd.z * cs * 2);
     display.fill_rect(fp.first - 1, fp.second - 1, 3, 3, 0xff4444);
-
-    display.update();
 }
